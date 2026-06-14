@@ -3153,14 +3153,46 @@ function applyDifficultyHearts() {
    MAIN LOOP & RESIZE
    ========================================================================== */
 
+function resetCanvasLayoutStyles() {
+  canvas.style.position = '';
+  canvas.style.left = '';
+  canvas.style.top = '';
+  canvas.style.transform = '';
+  canvas.style.maxWidth = '';
+  canvas.style.maxHeight = '';
+  const stage = document.getElementById('game-stage');
+  if (stage) {
+    stage.style.width = '';
+    stage.style.height = '';
+  }
+}
+
 function resizeCanvas() {
   syncLayoutMode();
 
   const wrapper = document.getElementById('game-wrapper');
   const startPanel = document.getElementById('start-panel');
   const mobile = isMobile();
-  const touchOverlay = mobile && usesPlayLayout();
+  const fullscreenPlay = mobile && usesPlayLayout();
 
+  if (fullscreenPlay) {
+    const ww = wrapper.clientWidth;
+    const wh = wrapper.clientHeight;
+    const scale = Math.max(ww / CANVAS_WIDTH, wh / CANVAS_HEIGHT);
+    canvas.style.position = 'absolute';
+    canvas.style.left = '50%';
+    canvas.style.top = '50%';
+    canvas.style.transform = 'translate(-50%, -50%)';
+    canvas.style.maxWidth = 'none';
+    canvas.style.maxHeight = 'none';
+    canvas.style.width = CANVAS_WIDTH * scale + 'px';
+    canvas.style.height = CANVAS_HEIGHT * scale + 'px';
+    return;
+  }
+
+  resetCanvasLayoutStyles();
+
+  const touchOverlay = mobile && usesPlayLayout();
   const startPanelExtra = (gameState === 'start' && startPanel && !startPanel.classList.contains('hidden'))
     ? startPanel.offsetHeight + 14
     : 0;
@@ -3169,17 +3201,11 @@ function resizeCanvas() {
     ? touchControls.offsetHeight + 10
     : 0;
 
-  const padX = touchOverlay ? 0 : 16;
-  const padY = touchOverlay ? 0 : 24;
+  const padX = 16;
+  const padY = 24;
   const ww = wrapper.clientWidth - padX;
-  let wh = wrapper.clientHeight - padY - startPanelExtra - touchExtra;
-
-  if (touchOverlay) {
-    wh = wrapper.clientHeight - startPanelExtra;
-  }
-
-  const maxScale = touchOverlay ? 3 : 1;
-  const scale = Math.min(ww / CANVAS_WIDTH, wh / CANVAS_HEIGHT, maxScale);
+  const wh = wrapper.clientHeight - padY - startPanelExtra - touchExtra;
+  const scale = Math.min(ww / CANVAS_WIDTH, wh / CANVAS_HEIGHT, 1);
   canvas.style.width = CANVAS_WIDTH * scale + 'px';
   canvas.style.height = CANVAS_HEIGHT * scale + 'px';
 }
