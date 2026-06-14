@@ -35,9 +35,11 @@ const INVINCIBLE_TIME = 1800; /* ms */
 const WALK_ANIM_SPEED = 120; /* ms per frame */
 const MAX_HEARTS = 3;
 const MAX_LIVES = 3;
+const PLAYER_NAME_STORAGE_KEY = 'emmasgame_player_name';
+const PLAYER_NAME_READY_KEY = 'emmasgame_name_ready';
 
 /* Game state */
-let gameState = 'start'; /* start | playing | riddle | levelComplete | gameOver | finale */
+let gameState = 'start'; /* start | story | playing | riddle | levelFade | gameOver | finale */
 let currentLevel = 0;
 let score = 0;
 let hearts = MAX_HEARTS;
@@ -90,7 +92,15 @@ let riddleFeedback = '';
 let activeRiddleKey = null;
 let riddleLocked = false;
 let levelRiddleTriggered = false;
+let levelRiddleStep = 0;
 let finaleRiddlesComplete = false;
+let fadeAlpha = 0;
+let fadeMode = null; /* 'out-to-riddle' | 'in-from-black' */
+let pendingRiddleKey = null;
+let storySlideIndex = 0;
+let storyFadeAlpha = 0;
+let storyFadeMode = null; /* null | 'out' | 'in' | 'exit' */
+let screenFadeAlpha = 0;
 let jumpHeld = false;
 let melodyStep = 0;
 
@@ -188,8 +198,34 @@ const ASSET_PATHS = {
     'assets/backgrounds/magical_garden_celebration_with_balloons.png',
     '../assets/backgrounds/finale_background.png',
     '../assets/backgrounds/magical_garden_celebration_with_balloons.png'
+  ],
+  story_1: [
+    'assets/story/story 1.png',
+    'assets/story/Story 1.png',
+    '../assets/story/story 1.png',
+    '../assets/story/Story 1.png'
+  ],
+  story_2: [
+    'assets/story/Story 2.png',
+    'assets/story/story 2.png',
+    '../assets/story/Story 2.png',
+    '../assets/story/story 2.png'
+  ],
+  story_3: [
+    'assets/story/Story 3.png',
+    'assets/story/story 3.png',
+    '../assets/story/Story 3.png',
+    '../assets/story/story 3.png'
+  ],
+  story_4: [
+    'assets/story/Story 4.png',
+    'assets/story/story 4.png',
+    '../assets/story/Story 4.png',
+    '../assets/story/story 4.png'
   ]
 };
+
+const STORY_SLIDE_KEYS = ['story_1', 'story_2', 'story_3', 'story_4'];
 
 const SPRITE_IMAGE_KEYS = new Set([
   'girl_idle', 'girl_walk_1', 'girl_walk_2', 'girl_jump',
@@ -208,13 +244,21 @@ const TEXT = {
   instructions1: 'אספי את תווי המוזיקה, הימנעי מענני השקט,',
   instructions2: 'והשתמשי בחליל הקסום שלך כדי להחזיר את המוזיקה לעולם.',
   startButton: 'התחלת המסע',
+  storyButton: 'הסיפור',
+  storyContinueHint: 'רווח, Enter או לחיצה — המשך',
+  storyEndHint: 'לחצי שוב כדי לחזור לתפריט',
+  storyClose: 'סגירה',
   chooseDifficulty: 'בחרי רמת קושי:',
   easyMode: 'מצב קל',
   hardMode: 'מצב קשה',
   score: 'ניקוד',
   notes: 'תווים',
   lives: 'חיים',
-  enterName: 'שם המוזיקאית',
+  playerLabel: 'מנגנת',
+  nameSaveHint: 'לחצי Enter או אישור — השדה ייעלם ואפשר להתחיל לשחק',
+  nameConfirm: 'אישור',
+  editName: 'שני שם',
+  playerNameReady: 'מנגנת:',
   namePlaceholder: 'השם שלך…',
   leaderboardTitle: '🏆 טבלת המובילים',
   leaderboardEmpty: 'עדיין אין ניקוד — היו הראשונות!',
@@ -225,7 +269,9 @@ const TEXT = {
   riddlePrompt: 'הקלידי תשובה ולחצי שליחה',
   submit: 'שליחה',
   playRecorderHint: 'לחצי ♪ לנגינה בחליל!',
-  playRecorderRiddleHint: 'עני על החידות כדי לפתוח את החליל!',
+  playRecorderRiddleHint: 'עני על החידות בסוף השלב כדי לפתוח את החליל!',
+  allNotesGoToFinish: '✨ אספת את כל התווים! רוצי לסוף השלב ✨',
+  levelFinishHint: 'סוף השלב',
   cloudShhh: 'ששש',
   gameOverTitle: 'אוי לא… נגמרו החיים!',
   gameOverLine1: 'אל דאגה — כל מוזיקאית גדולה',
@@ -307,6 +353,241 @@ function isRiddleAnswerCorrect(riddle, input) {
 
 function getActiveRiddle() {
   return activeRiddleKey ? RIDDLES[activeRiddleKey] : null;
+}
+
+/*
+ * Riddle flow (end of level only):
+ * 1. Collect every note on the level.
+ * 2. Walk to the finish line on the right (golden marker appears).
+ * 3. Screen fades to black → question appears.
+ * Level 0: forest → Level 1
+ * Level 1: cloud, then boss → Level 2
+ * Level 2: finale, then birthday → magic flute unlocks
+ */
+const LEVEL_FINISH_MARGIN = 420;
+const FADE_SPEED = 0.0024;
+const LEVEL_RIDDLE_QUEUE = [
+  ['forest'],
+  ['cloud', 'boss'],
+  ['finale', 'birthday']
+];
+
+function isAtLevelFinish(p) {
+  if (!level || !p) return false;
+  return p.x + p.width * 0.5 >= level.worldWidth - LEVEL_FINISH_MARGIN;
+}
+
+function hasAllLevelNotes(p) {
+  return p && level && p.collectedThisLevel >= level.notesRequired;
+}
+
+function getPendingRiddleKey() {
+  if (currentLevel === 2 && finaleRiddlesComplete) return null;
+  const queue = LEVEL_RIDDLE_QUEUE[currentLevel];
+  if (!queue || levelRiddleStep >= queue.length) return null;
+  return queue[levelRiddleStep];
+}
+
+function resetFadeState() {
+  fadeAlpha = 0;
+  fadeMode = null;
+  pendingRiddleKey = null;
+}
+
+function startRiddleTransition(riddleKey) {
+  pendingRiddleKey = riddleKey;
+  fadeMode = 'out-to-riddle';
+  fadeAlpha = 0;
+  gameState = 'levelFade';
+  touchControls.classList.add('hidden');
+  if (player) {
+    player.vx = 0;
+    player.vy = 0;
+  }
+}
+
+function startLevelFadeIn() {
+  fadeAlpha = 1;
+  fadeMode = 'in-from-black';
+  gameState = 'levelFade';
+}
+
+function updateLevelFade(dt) {
+  if (fadeMode === 'out-to-riddle') {
+    fadeAlpha = Math.min(1, fadeAlpha + dt * FADE_SPEED);
+    if (fadeAlpha >= 1) {
+      const key = pendingRiddleKey;
+      pendingRiddleKey = null;
+      fadeMode = null;
+      fadeAlpha = 0;
+      enterRiddleState(key);
+    }
+  } else if (fadeMode === 'in-from-black') {
+    fadeAlpha = Math.max(0, fadeAlpha - dt * FADE_SPEED);
+    if (fadeAlpha <= 0) {
+      fadeAlpha = 0;
+      fadeMode = null;
+      gameState = 'playing';
+      if (isMobile()) touchControls.classList.remove('hidden');
+    }
+  }
+}
+
+function drawFadeOverlay() {
+  if (fadeAlpha <= 0) return;
+  ctx.fillStyle = 'rgba(0, 0, 0, ' + fadeAlpha + ')';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+}
+
+function drawLevelFinishMarker() {
+  if (!level || !player || !hasAllLevelNotes(player)) return;
+  if (currentLevel === 2 && finaleRiddlesComplete) return;
+  if (levelRiddleTriggered && gameState === 'playing') return;
+
+  const finishX = level.worldWidth - LEVEL_FINISH_MARGIN;
+  const sx = finishX - cameraX;
+  if (sx < -80 || sx > CANVAS_WIDTH + 80) return;
+
+  const groundY = CANVAS_HEIGHT - 80;
+  const pulse = 0.5 + Math.sin(performance.now() * 0.004) * 0.5;
+
+  ctx.save();
+  ctx.globalAlpha = 0.35 + pulse * 0.35;
+  ctx.fillStyle = '#ffd700';
+  ctx.shadowColor = '#fff9c4';
+  ctx.shadowBlur = 18 + pulse * 12;
+  ctx.fillRect(sx - 4, groundY - 140, 8, 140);
+
+  applyHebrewTextStyle(16, true, 'center');
+  ctx.fillStyle = '#fff';
+  ctx.globalAlpha = 0.85 + pulse * 0.15;
+  ctx.fillText('← ' + TEXT.levelFinishHint, sx + 70, groundY - 150);
+  ctx.restore();
+}
+
+function drawLevelEndHint() {
+  if (!level || !player || gameState !== 'playing') return;
+  if (!hasAllLevelNotes(player) || isAtLevelFinish(player)) return;
+  if (levelRiddleTriggered) return;
+
+  ctx.fillStyle = 'rgba(90, 48, 128, 0.92)';
+  roundRect(CANVAS_WIDTH / 2 - 280, 78, 560, 36, 12);
+  ctx.fill();
+  applyHebrewTextStyle(15, true, 'center');
+  ctx.fillStyle = '#fff';
+  ctx.fillText(TEXT.allNotesGoToFinish, CANVAS_WIDTH / 2, 100);
+}
+
+function openStory() {
+  storySlideIndex = 0;
+  storyFadeAlpha = 1;
+  storyFadeMode = 'in';
+  gameState = 'story';
+  clearAllInput();
+  touchControls.classList.add('hidden');
+  syncStartPanel();
+}
+
+function beginStoryExit() {
+  if (storyFadeMode) return;
+  storyFadeMode = 'exit';
+  storyFadeAlpha = 0;
+}
+
+function finishStoryReturn() {
+  storySlideIndex = 0;
+  storyFadeAlpha = 0;
+  storyFadeMode = null;
+  gameState = 'start';
+  screenFadeAlpha = 1;
+  syncStartPanel();
+}
+
+function advanceStory() {
+  if (storyFadeMode) return;
+  if (storySlideIndex >= STORY_SLIDE_KEYS.length - 1) {
+    beginStoryExit();
+    return;
+  }
+  storyFadeMode = 'out';
+  storyFadeAlpha = 0;
+}
+
+function updateStory(dt) {
+  if (storyFadeMode === 'out' || storyFadeMode === 'exit') {
+    storyFadeAlpha = Math.min(1, storyFadeAlpha + dt * FADE_SPEED);
+    if (storyFadeAlpha >= 1) {
+      if (storyFadeMode === 'out') {
+        storySlideIndex++;
+        storyFadeMode = 'in';
+      } else {
+        finishStoryReturn();
+      }
+    }
+  } else if (storyFadeMode === 'in') {
+    storyFadeAlpha = Math.max(0, storyFadeAlpha - dt * FADE_SPEED);
+    if (storyFadeAlpha <= 0) {
+      storyFadeAlpha = 0;
+      storyFadeMode = null;
+    }
+  }
+}
+
+function updateScreenFade(dt) {
+  if (screenFadeAlpha <= 0) return;
+  screenFadeAlpha = Math.max(0, screenFadeAlpha - dt * FADE_SPEED);
+}
+
+function drawScreenFadeOverlay() {
+  if (screenFadeAlpha <= 0) return;
+  ctx.fillStyle = 'rgba(0, 0, 0, ' + screenFadeAlpha + ')';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+}
+
+function drawStoryScreen() {
+  uiButtons = [];
+
+  ctx.fillStyle = '#0a0612';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  const img = getImage(STORY_SLIDE_KEYS[storySlideIndex]);
+  if (img) {
+    const margin = 36;
+    const maxW = CANVAS_WIDTH - margin * 2;
+    const maxH = CANVAS_HEIGHT - 110;
+    const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    const x = (CANVAS_WIDTH - w) / 2;
+    const y = (CANVAS_HEIGHT - h) / 2 - 16;
+    ctx.drawImage(img, x, y, w, h);
+  } else {
+    applyHebrewTextStyle(22, true, 'center');
+    ctx.fillStyle = '#fff';
+    ctx.fillText('…', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+  }
+
+  applyHebrewTextStyle(18, false, 'center');
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+  ctx.fillText(
+    (storySlideIndex + 1) + ' / ' + STORY_SLIDE_KEYS.length,
+    CANVAS_WIDTH / 2,
+    CANVAS_HEIGHT - 52
+  );
+
+  const hint = storySlideIndex >= STORY_SLIDE_KEYS.length - 1
+    ? TEXT.storyEndHint
+    : TEXT.storyContinueHint;
+  ctx.fillText(hint, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 24);
+
+  drawButton(24, 20, 120, 40, TEXT.storyClose, 'storyClose');
+
+  if (storyFadeAlpha > 0) {
+    ctx.fillStyle = 'rgba(0, 0, 0, ' + storyFadeAlpha + ')';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  }
+
+  resetTextStyle();
 }
 
 function applyHebrewTextStyle(size, bold, align) {
@@ -543,6 +824,17 @@ document.addEventListener('keydown', (e) => {
   if (gameState === 'playing') {
     keys[e.code] = true;
   }
+  if (gameState === 'story') {
+    if (['Space', 'Enter', 'ArrowRight', 'ArrowLeft', 'ArrowDown'].includes(e.code)) {
+      e.preventDefault();
+      advanceStory();
+    }
+    if (e.code === 'Escape') {
+      e.preventDefault();
+      beginStoryExit();
+    }
+    return;
+  }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
     if (gameState === 'playing') e.preventDefault();
   }
@@ -667,7 +959,7 @@ canvas.addEventListener('touchstart', (e) => {
 }, { passive: false });
 
 function handleCanvasClick(x, y) {
-  if (gameState === 'start') {
+  if (gameState === 'start' || gameState === 'story') {
     tryStartBackgroundMusic();
   }
   for (const btn of uiButtons) {
@@ -675,6 +967,9 @@ function handleCanvasClick(x, y) {
       btn.action();
       return;
     }
+  }
+  if (gameState === 'story' && !storyFadeMode) {
+    advanceStory();
   }
 }
 
@@ -919,7 +1214,9 @@ function buildLevel(levelIndex) {
   riddleInput = '';
   riddleHint = '';
   riddleFeedback = '';
+  levelRiddleStep = 0;
   levelRiddleTriggered = false;
+  resetFadeState();
   if (levelIndex !== 2) {
     finaleRiddlesComplete = false;
   }
@@ -1266,19 +1563,17 @@ function updatePlaying(dt) {
     magicRecorder.glowPhase += dt * 0.004;
   }
 
-  /* Check level complete → riddles */
-  if (p.collectedThisLevel >= level.notesRequired && !levelRiddleTriggered && gameState === 'playing') {
-    if (level.hasMagicRecorder) {
-      if (!finaleRiddlesComplete) {
-        levelRiddleTriggered = true;
-        enterRiddleState('finale');
-      }
-    } else if (currentLevel === 0) {
+  /* End of level: all notes + reach finish → fade → riddle */
+  if (
+    hasAllLevelNotes(p) &&
+    isAtLevelFinish(p) &&
+    !levelRiddleTriggered &&
+    gameState === 'playing'
+  ) {
+    const nextKey = getPendingRiddleKey();
+    if (nextKey) {
       levelRiddleTriggered = true;
-      enterRiddleState('forest');
-    } else if (currentLevel === 1) {
-      levelRiddleTriggered = true;
-      enterRiddleState('cloud');
+      startRiddleTransition(nextKey);
     }
   }
 
@@ -1379,6 +1674,8 @@ function loseLifeAndRestart() {
   currentLevel = 0;
   finaleRiddlesComplete = false;
   levelRiddleTriggered = false;
+  levelRiddleStep = 0;
+  resetFadeState();
   exitRiddleState();
   clearAllInput();
   applyHearts();
@@ -1428,11 +1725,20 @@ function update(dt) {
 
   if (gameState === 'playing') {
     updatePlaying(dt);
+  } else if (gameState === 'levelFade') {
+    updateLevelFade(dt);
+    updateBgNotes(dt);
   } else if (gameState === 'finale') {
     updateConfetti(dt);
     updateBgNotes(dt);
-  } else   if (gameState === 'start' || gameState === 'gameOver' || gameState === 'riddle') {
+  } else if (gameState === 'story') {
+    updateStory(dt);
+  } else if (gameState === 'start' || gameState === 'gameOver' || gameState === 'riddle') {
     updateBgNotes(dt);
+  }
+
+  if (gameState === 'start') {
+    updateScreenFade(dt);
   }
 
   if (gameState === 'riddle') {
@@ -1800,18 +2106,23 @@ function roundRect(x, y, w, h, r) {
    8. UI / MODAL HANDLING
    ========================================================================== */
 
+function truncateDisplayName(name, maxLen = 14) {
+  if (name.length <= maxLen) return name;
+  return name.slice(0, maxLen - 1) + '…';
+}
+
 function drawHUD() {
   uiButtons = [];
 
   /* Top bar panel */
   ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-  roundRect(16, 12, CANVAS_WIDTH - 32, 52, 16);
+  roundRect(16, 12, CANVAS_WIDTH - 32, 58, 16);
   ctx.fill();
 
   /* Hearts */
   for (let i = 0; i < MAX_HEARTS; i++) {
     const hx = 32 + i * 36;
-    const hy = 24;
+    const hy = 26;
     const heartImg = getImage('heart');
     if (heartImg && i < hearts) {
       ctx.drawImage(heartImg, hx, hy, 28, 28);
@@ -1827,27 +2138,32 @@ function drawHUD() {
   /* Lives */
   applyHebrewTextStyle(18, true, 'right');
   ctx.fillStyle = '#5a3080';
-  ctx.fillText(TEXT.lives + ': ' + lives + ' / ' + MAX_LIVES, 168, 42);
+  ctx.fillText(TEXT.lives + ': ' + lives + ' / ' + MAX_LIVES, 168, 44);
 
   /* Score */
   ctx.fillStyle = '#5a3080';
   applyHebrewTextStyle(22, true, 'right');
-  ctx.fillText(TEXT.score + ': ' + score, 310, 42);
+  ctx.fillText(TEXT.score + ': ' + score, 310, 44);
 
-  /* Level name + difficulty */
+  /* Player name + level */
   const lvlName = level ? level.name : '';
   const diffLabel = getDifficulty().hudLabel;
-  applyHebrewTextStyle(22, true, 'center');
-  ctx.fillText(lvlName + ' · ' + diffLabel, CANVAS_WIDTH / 2, 42);
+  const displayName = truncateDisplayName(playerName || getPlayerName());
+  applyHebrewTextStyle(16, true, 'center');
+  ctx.fillStyle = '#7a4cb0';
+  ctx.fillText(TEXT.playerLabel + ': ' + displayName, CANVAS_WIDTH / 2, 34);
+  applyHebrewTextStyle(20, true, 'center');
+  ctx.fillStyle = '#5a3080';
+  ctx.fillText(lvlName + ' · ' + diffLabel, CANVAS_WIDTH / 2, 56);
 
   /* Notes progress */
   if (level && player) {
     applyHebrewTextStyle(18, false, 'left');
-    ctx.fillText(TEXT.notes + ': ' + player.collectedThisLevel + ' / ' + level.notesRequired, CANVAS_WIDTH - 300, 42);
+    ctx.fillText(TEXT.notes + ': ' + player.collectedThisLevel + ' / ' + level.notesRequired, CANVAS_WIDTH - 300, 44);
   }
 
   /* Home — back to difficulty select */
-  const homeBtn = { x: CANVAS_WIDTH - 118, y: 16, w: 58, h: 40 };
+  const homeBtn = { x: CANVAS_WIDTH - 118, y: 18, w: 58, h: 40 };
   ctx.fillStyle = '#ffe8ff';
   roundRect(homeBtn.x, homeBtn.y, homeBtn.w, homeBtn.h, 10);
   ctx.fill();
@@ -1862,7 +2178,7 @@ function drawHUD() {
   uiButtons.push({ ...homeBtn, action: goHome });
 
   /* Mute button */
-  const muteBtn = { x: CANVAS_WIDTH - 56, y: 16, w: 40, h: 40 };
+  const muteBtn = { x: CANVAS_WIDTH - 56, y: 18, w: 40, h: 40 };
   ctx.fillStyle = muted ? '#ccc' : '#e8d4ff';
   roundRect(muteBtn.x, muteBtn.y, muteBtn.w, muteBtn.h, 10);
   ctx.fill();
@@ -1924,7 +2240,12 @@ function drawButton(x, y, w, h, label, id) {
 }
 
 function handleButton(id) {
-  if (id === 'startEasy') {
+  if (id === 'openStory') {
+    tryStartBackgroundMusic();
+    openStory();
+  } else if (id === 'storyClose') {
+    beginStoryExit();
+  } else if (id === 'startEasy') {
     difficultyMode = 'easy';
     tryStartBackgroundMusic();
     startGame();
@@ -1976,11 +2297,11 @@ function drawStartScreen() {
   ctx.fillText(TEXT.subtitle, CANVAS_WIDTH / 2, subY + 30);
   ctx.shadowBlur = 0;
 
-  /* Emma playing the flute — large hero image */
-  const heroW = 240;
-  const heroH = 360;
+  /* Emma — slightly smaller so buttons fit comfortably */
+  const heroW = 220;
+  const heroH = 330;
   const heroX = CANVAS_WIDTH / 2 - heroW / 2;
-  const heroY = 200;
+  const heroY = 188;
   const previewImg = getImage('girl_play_recorder') || getImage('girl_happy') || getImage('girl_idle');
   if (previewImg) {
     ctx.save();
@@ -1992,20 +2313,22 @@ function drawStartScreen() {
     drawCharacterPlaceholder(heroX, heroY, heroW, heroH, 1);
   }
 
-  drawOverlayPanel(CANVAS_WIDTH / 2 - 340, 520, 680, 72);
+  drawOverlayPanel(CANVAS_WIDTH / 2 - 340, 500, 680, 72);
   ctx.fillStyle = '#fff';
   applyHebrewTextStyle(18, false, 'center');
-  ctx.fillText(TEXT.instructions1, CANVAS_WIDTH / 2, 554);
-  ctx.fillText(TEXT.instructions2, CANVAS_WIDTH / 2, 580);
+  ctx.fillText(TEXT.instructions1, CANVAS_WIDTH / 2, 534);
+  ctx.fillText(TEXT.instructions2, CANVAS_WIDTH / 2, 560);
 
   ctx.fillStyle = '#ffe8ff';
   applyHebrewTextStyle(20, true, 'center');
-  ctx.fillText(TEXT.chooseDifficulty, CANVAS_WIDTH / 2, 612);
+  ctx.fillText(TEXT.chooseDifficulty, CANVAS_WIDTH / 2, 592);
 
-  drawButton(CANVAS_WIDTH / 2 - 320, 618, 300, 48, TEXT.easyMode, 'startEasy');
-  drawButton(CANVAS_WIDTH / 2 + 20, 618, 300, 48, TEXT.hardMode, 'startHard');
+  drawButton(CANVAS_WIDTH / 2 - 320, 628, 300, 48, TEXT.easyMode, 'startEasy');
+  drawButton(CANVAS_WIDTH / 2 + 20, 628, 300, 48, TEXT.hardMode, 'startHard');
+  drawButton(CANVAS_WIDTH - 164, 20, 140, 44, '📖 ' + TEXT.storyButton, 'openStory');
 
   resetTextStyle();
+  drawScreenFadeOverlay();
   syncStartPanel();
 }
 
@@ -2243,30 +2566,32 @@ function submitRiddle() {
 }
 
 function handleRiddleSuccess() {
-  const key = activeRiddleKey;
   riddleLocked = false;
   riddleFeedback = '';
   riddleHint = '';
   exitRiddleState();
+  levelRiddleStep++;
 
-  if (key === 'forest') {
-    buildLevel(1);
-    gameState = 'playing';
-  } else if (key === 'cloud') {
-    enterRiddleState('boss');
+  const queue = LEVEL_RIDDLE_QUEUE[currentLevel] || [];
+  if (levelRiddleStep < queue.length) {
+    startRiddleTransition(queue[levelRiddleStep]);
     return;
-  } else if (key === 'boss') {
-    buildLevel(2);
-    gameState = 'playing';
-  } else if (key === 'finale') {
-    enterRiddleState('birthday');
-    return;
-  } else if (key === 'birthday') {
-    finaleRiddlesComplete = true;
-    gameState = 'playing';
   }
 
-  if (isMobile()) touchControls.classList.remove('hidden');
+  levelRiddleStep = 0;
+  levelRiddleTriggered = false;
+
+  if (currentLevel === 0) {
+    buildLevel(1);
+    startLevelFadeIn();
+  } else if (currentLevel === 1) {
+    buildLevel(2);
+    startLevelFadeIn();
+  } else if (currentLevel === 2) {
+    finaleRiddlesComplete = true;
+    gameState = 'playing';
+    if (isMobile()) touchControls.classList.remove('hidden');
+  }
 }
 
 /* ==========================================================================
@@ -2396,12 +2721,160 @@ function getPlayerName() {
   return name || 'אמה';
 }
 
+function isNameEntryDismissed() {
+  try {
+    return localStorage.getItem(PLAYER_NAME_READY_KEY) === '1';
+  } catch (err) {
+    return false;
+  }
+}
+
+function dismissNameEntry() {
+  const name = getPlayerName();
+  playerName = name;
+  savePlayerName(name);
+  try {
+    localStorage.setItem(PLAYER_NAME_READY_KEY, '1');
+  } catch (err) {
+    /* storage optional */
+  }
+
+  const input = document.getElementById('player-name-input');
+  if (input) input.blur();
+
+  applyNameBlockVisibility();
+  resizeCanvas();
+}
+
+function showNameEntry() {
+  try {
+    localStorage.removeItem(PLAYER_NAME_READY_KEY);
+  } catch (err) {
+    /* storage optional */
+  }
+
+  applyNameBlockVisibility();
+
+  const input = document.getElementById('player-name-input');
+  if (input) {
+    requestAnimationFrame(() => {
+      input.focus({ preventScroll: true });
+    });
+  }
+}
+
+function applyNameBlockVisibility() {
+  const dismissed = isNameEntryDismissed();
+  const nameBlock = document.querySelector('.start-name-block');
+  const collapsedBar = document.getElementById('name-collapsed-bar');
+  const nameLabel = document.getElementById('name-display-label');
+  const wrapper = document.getElementById('game-wrapper');
+
+  if (nameBlock) nameBlock.classList.toggle('hidden', dismissed);
+  if (collapsedBar) {
+    collapsedBar.classList.toggle('hidden', !dismissed);
+    collapsedBar.setAttribute('aria-hidden', dismissed ? 'false' : 'true');
+  }
+  if (nameLabel) {
+    nameLabel.textContent = TEXT.playerNameReady + ' ' + getPlayerName();
+  }
+  if (wrapper) wrapper.classList.toggle('name-collapsed', dismissed && gameState === 'start');
+}
+
+function setupNameInput() {
+  const input = document.getElementById('player-name-input');
+  const label = document.querySelector('label[for="player-name-input"]');
+  const confirmBtn = document.getElementById('name-confirm-btn');
+  const editBtn = document.getElementById('edit-name-btn');
+  if (!input) return;
+
+  const focusNameInput = (e) => {
+    if (e) {
+      e.stopPropagation();
+      if (e.cancelable) e.preventDefault();
+    }
+    input.focus({ preventScroll: true });
+  };
+
+  input.addEventListener('pointerdown', focusNameInput);
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.code === 'Enter') {
+      e.preventDefault();
+      dismissNameEntry();
+    }
+  });
+
+  if (label) {
+    label.addEventListener('pointerdown', focusNameInput);
+  }
+
+  if (confirmBtn) {
+    confirmBtn.textContent = TEXT.nameConfirm;
+    confirmBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dismissNameEntry();
+    });
+  }
+
+  if (editBtn) {
+    editBtn.textContent = TEXT.editName;
+    editBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showNameEntry();
+    });
+  }
+}
+
+function loadSavedPlayerName() {
+  try {
+    const saved = localStorage.getItem(PLAYER_NAME_STORAGE_KEY);
+    const el = document.getElementById('player-name-input');
+    if (saved && el) {
+      el.value = saved;
+      if (localStorage.getItem(PLAYER_NAME_READY_KEY) !== '1') {
+        localStorage.setItem(PLAYER_NAME_READY_KEY, '1');
+      }
+    }
+  } catch (err) {
+    /* storage optional */
+  }
+}
+
+function savePlayerName(name) {
+  try {
+    localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name);
+  } catch (err) {
+    /* storage optional */
+  }
+}
+
 function syncStartPanel() {
   const panel = document.getElementById('start-panel');
-  if (!panel) return;
+  const wrapper = document.getElementById('game-wrapper');
+  const hintEl = document.getElementById('name-save-hint');
+  const confirmBtn = document.getElementById('name-confirm-btn');
   const show = gameState === 'start';
-  panel.classList.toggle('hidden', !show);
-  panel.setAttribute('aria-hidden', show ? 'false' : 'true');
+
+  if (panel) {
+    panel.classList.toggle('hidden', !show);
+    panel.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }
+  if (wrapper) {
+    wrapper.classList.toggle('start-mode', show);
+    if (!show) wrapper.classList.remove('name-collapsed');
+  }
+  if (hintEl) hintEl.textContent = TEXT.nameSaveHint;
+  if (confirmBtn) confirmBtn.textContent = TEXT.nameConfirm;
+  if (show) {
+    loadSavedPlayerName();
+    applyNameBlockVisibility();
+  }
+
+  resizeCanvas();
 }
 
 function renderLeaderboardHtml() {
@@ -2417,7 +2890,7 @@ function renderLeaderboardHtml() {
     return;
   }
 
-  leaderboardCache.slice(0, 8).forEach((row, i) => {
+  leaderboardCache.slice(0, 4).forEach((row, i) => {
     const li = document.createElement('li');
     const mode = row.difficulty === 'hard' ? 'קשה' : 'קל';
     const done = row.completed ? ' ✨' : '';
@@ -2460,6 +2933,7 @@ async function submitScoreToLeaderboard(completed) {
 
 function startGame() {
   playerName = getPlayerName();
+  savePlayerName(playerName);
   score = 0;
   lives = MAX_LIVES;
   applyHearts();
@@ -2467,6 +2941,8 @@ function startGame() {
   lifeLostFlashUntil = 0;
   finaleRiddlesComplete = false;
   levelRiddleTriggered = false;
+  levelRiddleStep = 0;
+  resetFadeState();
   buildLevel(0);
   gameState = 'playing';
   syncStartPanel();
@@ -2477,6 +2953,8 @@ function startGame() {
 
 function restartLevel() {
   applyHearts();
+  levelRiddleStep = 0;
+  resetFadeState();
   buildLevel(currentLevel);
   gameState = 'playing';
   syncStartPanel();
@@ -2493,6 +2971,12 @@ function resetGame() {
   lifeLostFlashUntil = 0;
   finaleRiddlesComplete = false;
   levelRiddleTriggered = false;
+  levelRiddleStep = 0;
+  resetFadeState();
+  storySlideIndex = 0;
+  storyFadeAlpha = 0;
+  storyFadeMode = null;
+  screenFadeAlpha = 0;
   activeRiddleKey = null;
   riddleFeedback = '';
   riddleHint = '';
@@ -2523,8 +3007,15 @@ function applyDifficultyHearts() {
 
 function resizeCanvas() {
   const wrapper = document.getElementById('game-wrapper');
+  const startPanel = document.getElementById('start-panel');
+  const startPanelExtra = (gameState === 'start' && startPanel && !startPanel.classList.contains('hidden'))
+    ? startPanel.offsetHeight + 14
+    : 0;
+  const touchExtra = (touchControls && !touchControls.classList.contains('hidden'))
+    ? touchControls.offsetHeight + 10
+    : 0;
   const ww = wrapper.clientWidth - 16;
-  const wh = wrapper.clientHeight - 140;
+  const wh = wrapper.clientHeight - 24 - startPanelExtra - touchExtra;
   const scale = Math.min(ww / CANVAS_WIDTH, wh / CANVAS_HEIGHT, 1);
   canvas.style.width = CANVAS_WIDTH * scale + 'px';
   canvas.style.height = CANVAS_HEIGHT * scale + 'px';
@@ -2541,10 +3032,23 @@ function render() {
     case 'start':
       drawStartScreen();
       break;
+    case 'story':
+      drawStoryScreen();
+      break;
     case 'playing':
       drawGameWorld();
+      drawLevelFinishMarker();
       drawHUD();
+      drawLevelEndHint();
       drawLifeLostFlash();
+      break;
+    case 'levelFade':
+      drawGameWorld();
+      drawLevelFinishMarker();
+      drawHUD();
+      drawLevelEndHint();
+      drawLifeLostFlash();
+      drawFadeOverlay();
       break;
     case 'riddle':
       drawRiddleModal();
@@ -2577,6 +3081,7 @@ function gameLoop(timestamp) {
 
 async function init() {
   setupTouchControls();
+  setupNameInput();
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
 
@@ -2587,6 +3092,7 @@ async function init() {
 
   gameState = 'start';
   syncStartPanel();
+  loadSavedPlayerName();
   loadLeaderboard();
   requestAnimationFrame(gameLoop);
 }

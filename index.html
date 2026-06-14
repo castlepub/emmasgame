@@ -11,15 +11,6 @@
     <div id="game-stage">
       <canvas id="game-canvas" width="1280" height="720"></canvas>
 
-      <div id="start-panel" class="hidden" aria-hidden="true">
-        <label for="player-name-input">שם המוזיקאית</label>
-        <input type="text" id="player-name-input" dir="rtl" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="20" placeholder="השם שלך…">
-        <div id="leaderboard-panel">
-          <h3 id="leaderboard-title">🏆 טבלת המובילים</h3>
-          <ol id="leaderboard-list"></ol>
-        </div>
-      </div>
-
       <div id="riddle-overlay" class="hidden" aria-hidden="true">
         <div id="riddle-panel">
           <h2 id="riddle-title">✨ חידה מוזיקלית ✨</h2>
@@ -29,6 +20,27 @@
           <button type="button" id="riddle-submit-btn">שליחה</button>
           <p id="riddle-feedback-text" aria-live="polite"></p>
           <p id="riddle-hint-text" aria-live="polite"></p>
+        </div>
+      </div>
+    </div>
+
+    <div id="start-panel" class="hidden" aria-hidden="true">
+      <div class="start-panel-grid">
+        <div class="start-name-block">
+          <label for="player-name-input">שם המוזיקאית</label>
+          <div class="name-input-row">
+            <input type="text" id="player-name-input" dir="rtl" inputmode="text" enterkeyhint="done" autocomplete="nickname" autocapitalize="words" spellcheck="false" maxlength="20" placeholder="השם שלך…">
+            <button type="button" id="name-confirm-btn" class="name-confirm-btn">אישור</button>
+          </div>
+          <p id="name-save-hint" class="name-save-hint">לחצי Enter או אישור — השדה ייעלם ואפשר להתחיל לשחק</p>
+        </div>
+        <div id="name-collapsed-bar" class="name-collapsed-bar hidden" aria-hidden="true">
+          <span id="name-display-label"></span>
+          <button type="button" id="edit-name-btn" class="edit-name-btn">שני שם</button>
+        </div>
+        <div id="leaderboard-panel">
+          <h3 id="leaderboard-title">🏆 טבלת המובילים</h3>
+          <ol id="leaderboard-list"></ol>
         </div>
       </div>
     </div>
