@@ -51,9 +51,8 @@ textarea,
 }
 
 #game-wrapper.play-mode {
-  justify-content: stretch;
+  justify-content: center;
   gap: 0;
-  padding: 0;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   background: #0a0612;
   overflow: hidden;
@@ -64,6 +63,10 @@ textarea,
   line-height: 0;
   flex-shrink: 1;
   min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
 }
 
 #game-wrapper.play-mode #game-stage {
@@ -71,33 +74,35 @@ textarea,
   width: 100%;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+}
+
+#game-viewport {
   position: relative;
+  line-height: 0;
+  max-width: 100%;
+  max-height: 100%;
 }
 
 #game-canvas {
   display: block;
+  width: 100%;
+  height: 100%;
   image-rendering: auto;
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  max-width: 100%;
-  max-height: calc(100vh - 130px);
-  max-height: calc(100dvh - 130px);
 }
 
 #game-wrapper.play-mode #game-canvas {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  max-width: none;
-  max-height: none;
   border-radius: 0;
   box-shadow: none;
 }
 
-#game-wrapper.start-mode #game-canvas {
-  max-height: calc(100vh - 260px);
+#game-wrapper.start-mode #game-viewport {
+  max-height: calc(100dvh - 260px);
+}
+
+#game-wrapper.start-mode.name-collapsed #game-viewport {
+  max-height: calc(100dvh - 200px);
 }
 
 /* ---- Start panel (below canvas — name + leaderboard) ---- */
@@ -288,14 +293,6 @@ textarea,
     padding-top: 12px;
     max-height: 96px;
   }
-
-  #game-wrapper.start-mode #game-canvas {
-    max-height: calc(100vh - 280px);
-  }
-
-  #game-wrapper.start-mode.name-collapsed #game-canvas {
-    max-height: calc(100vh - 200px);
-  }
 }
 
 /* ---- Riddle modal ---- */
@@ -440,38 +437,28 @@ textarea,
   display: none;
 }
 
-#touch-controls {
-  position: relative;
-  flex-shrink: 0;
-  width: 100%;
-  max-width: 1280px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 24px 12px;
-  background: rgba(45, 27, 78, 0.96);
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-radius: 16px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  pointer-events: auto;
-  z-index: 5;
-  direction: ltr;
-}
-
-#game-wrapper.play-mode #touch-controls {
+#game-viewport #touch-controls {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
   width: 100%;
   max-width: none;
-  background: linear-gradient(to top, rgba(10, 6, 18, 0.72) 0%, rgba(10, 6, 18, 0.35) 55%, transparent 100%);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 8px max(10px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-right));
+  background: linear-gradient(to top, rgba(10, 6, 18, 0.78) 0%, rgba(10, 6, 18, 0.3) 55%, transparent 100%);
   border: none;
   border-radius: 0;
   box-shadow: none;
-  padding: 10px max(12px, env(safe-area-inset-left)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-right));
   z-index: 20;
   pointer-events: none;
+  direction: ltr;
+}
+
+#touch-controls.hidden {
+  display: none;
 }
 
 .rotate-hint {
@@ -480,14 +467,15 @@ textarea,
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 6, 18, 0.55);
-  z-index: 18;
-  pointer-events: none;
+  background: rgba(10, 6, 18, 0.88);
+  z-index: 30;
+  pointer-events: auto;
   padding: 20px;
 }
 
 .rotate-hint.hidden {
   display: none;
+  pointer-events: none;
 }
 
 .rotate-hint-box {
@@ -499,6 +487,13 @@ textarea,
   padding: 22px 28px;
   max-width: 280px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+.rotate-hint-sub {
+  font-size: 14px;
+  font-weight: normal;
+  margin-top: 8px;
+  color: #ffe8ff;
 }
 
 .rotate-icon {
@@ -518,10 +513,6 @@ textarea,
   0%, 100% { transform: rotate(0deg); }
   35% { transform: rotate(-90deg); }
   65% { transform: rotate(-90deg); }
-}
-
-#touch-controls.hidden {
-  display: none;
 }
 
 .touch-pad {

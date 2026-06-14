@@ -900,19 +900,34 @@ function usesPlayLayout() {
   return ['playing', 'levelFade', 'riddle', 'gameOver', 'finale'].includes(gameState);
 }
 
+function tryMobileFullscreen() {
+  if (!isMobile()) return;
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req) return;
+  try {
+    const p = req.call(el);
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (err) {
+    /* optional */
+  }
+}
+
 function syncLayoutMode() {
   const wrapper = document.getElementById('game-wrapper');
   const rotateHint = document.getElementById('rotate-hint');
   const playLayout = usesPlayLayout();
   const mobile = isMobile();
+  const portrait = isPortraitViewport();
 
   if (wrapper) {
     wrapper.classList.toggle('play-mode', playLayout && mobile);
     wrapper.classList.toggle('mobile-layout', mobile);
+    wrapper.classList.toggle('portrait-mobile', mobile && playLayout && portrait);
   }
 
   if (rotateHint) {
-    const showRotate = mobile && playLayout && isPortraitViewport();
+    const showRotate = mobile && playLayout && portrait;
     rotateHint.classList.toggle('hidden', !showRotate);
     rotateHint.setAttribute('aria-hidden', showRotate ? 'false' : 'true');
   }
@@ -1510,8 +1525,13 @@ function addFinaleLevel(groundY) {
    6. UPDATE LOOP
    ========================================================================== */
 
+function isMobilePortraitPlayBlocked() {
+  return isMobile() && usesPlayLayout() && isPortraitViewport();
+}
+
 function updatePlaying(dt) {
   if (!player || !level) return;
+  if (isMobilePortraitPlayBlocked()) return;
 
   const now = performance.now();
   const p = player;
@@ -3094,6 +3114,7 @@ function startGame() {
   buildLevel(0);
   gameState = 'playing';
   syncStartPanel();
+  tryMobileFullscreen();
   touchControls.classList.remove('hidden');
   if (isMobile()) touchControls.classList.remove('hidden');
   resizeCanvas();
@@ -3153,61 +3174,44 @@ function applyDifficultyHearts() {
    MAIN LOOP & RESIZE
    ========================================================================== */
 
-function resetCanvasLayoutStyles() {
-  canvas.style.position = '';
-  canvas.style.left = '';
-  canvas.style.top = '';
-  canvas.style.transform = '';
-  canvas.style.maxWidth = '';
-  canvas.style.maxHeight = '';
-  const stage = document.getElementById('game-stage');
-  if (stage) {
-    stage.style.width = '';
-    stage.style.height = '';
-  }
-}
-
 function resizeCanvas() {
   syncLayoutMode();
 
   const wrapper = document.getElementById('game-wrapper');
+  const viewport = document.getElementById('game-viewport');
   const startPanel = document.getElementById('start-panel');
-  const mobile = isMobile();
-  const fullscreenPlay = mobile && usesPlayLayout();
+  const mobilePlay = isMobile() && usesPlayLayout();
 
-  if (fullscreenPlay) {
-    const ww = wrapper.clientWidth;
-    const wh = wrapper.clientHeight;
-    const scale = Math.max(ww / CANVAS_WIDTH, wh / CANVAS_HEIGHT);
-    canvas.style.position = 'absolute';
-    canvas.style.left = '50%';
-    canvas.style.top = '50%';
-    canvas.style.transform = 'translate(-50%, -50%)';
-    canvas.style.maxWidth = 'none';
-    canvas.style.maxHeight = 'none';
-    canvas.style.width = CANVAS_WIDTH * scale + 'px';
-    canvas.style.height = CANVAS_HEIGHT * scale + 'px';
-    return;
-  }
-
-  resetCanvasLayoutStyles();
-
-  const touchOverlay = mobile && usesPlayLayout();
   const startPanelExtra = (gameState === 'start' && startPanel && !startPanel.classList.contains('hidden'))
     ? startPanel.offsetHeight + 14
     : 0;
 
-  const touchExtra = (!touchOverlay && touchControls && !touchControls.classList.contains('hidden'))
-    ? touchControls.offsetHeight + 10
-    : 0;
+  let ww;
+  let wh;
+  if (mobilePlay) {
+    ww = wrapper.clientWidth;
+    wh = wrapper.clientHeight;
+  } else {
+    ww = wrapper.clientWidth - 16;
+    wh = wrapper.clientHeight - 24 - startPanelExtra;
+  }
 
-  const padX = 16;
-  const padY = 24;
-  const ww = wrapper.clientWidth - padX;
-  const wh = wrapper.clientHeight - padY - startPanelExtra - touchExtra;
-  const scale = Math.min(ww / CANVAS_WIDTH, wh / CANVAS_HEIGHT, 1);
-  canvas.style.width = CANVAS_WIDTH * scale + 'px';
-  canvas.style.height = CANVAS_HEIGHT * scale + 'px';
+  const maxScale = mobilePlay ? 3 : 1;
+  const scale = Math.min(ww / CANVAS_WIDTH, wh / CANVAS_HEIGHT, maxScale);
+  const displayW = Math.round(CANVAS_WIDTH * scale);
+  const displayH = Math.round(CANVAS_HEIGHT * scale);
+
+  if (viewport) {
+    viewport.style.width = displayW + 'px';
+    viewport.style.height = displayH + 'px';
+  }
+
+  canvas.style.position = '';
+  canvas.style.left = '';
+  canvas.style.top = '';
+  canvas.style.transform = '';
+  canvas.style.width = displayW + 'px';
+  canvas.style.height = displayH + 'px';
 }
 
 function render() {
