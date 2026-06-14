@@ -34,6 +34,19 @@ textarea,
 
 #game-wrapper.start-mode {
   touch-action: auto;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+#game-wrapper.start-mode #game-stage {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+}
+
+#game-wrapper.start-mode #touch-controls {
+  display: none !important;
 }
 
 #game-wrapper {
@@ -290,8 +303,78 @@ textarea,
     border-right: none;
     border-top: 1px solid rgba(255, 255, 255, 0.18);
     padding-right: 0;
-    padding-top: 12px;
-    max-height: 96px;
+    padding-top: 8px;
+    max-height: 72px;
+    min-height: 0;
+  }
+
+  #start-panel {
+    padding: 8px 12px 10px;
+  }
+
+  #leaderboard-title {
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+
+  #leaderboard-list {
+    font-size: 12px;
+    line-height: 1.25;
+  }
+}
+
+@media (max-width: 899px) and (orientation: landscape) {
+  #game-wrapper.start-mode #game-viewport {
+    max-height: none;
+  }
+
+  #game-wrapper.start-mode.name-collapsed #game-viewport {
+    max-height: none;
+  }
+
+  #start-panel {
+    padding: 5px 12px 7px;
+    flex-shrink: 0;
+  }
+
+  .start-panel-grid {
+    grid-template-columns: 1fr auto;
+    gap: 8px 14px;
+    align-items: center;
+  }
+
+  #leaderboard-panel {
+    max-height: 52px;
+    min-height: 0;
+    padding: 0 10px 0 0;
+    border-top: none;
+    border-right: 1px solid rgba(255, 255, 255, 0.18);
+    overflow-y: auto;
+  }
+
+  #leaderboard-title {
+    font-size: 11px;
+    margin-bottom: 2px;
+  }
+
+  #leaderboard-list {
+    font-size: 10px;
+    line-height: 1.15;
+  }
+
+  .name-collapsed-bar {
+    padding: 0;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  #name-display-label {
+    font-size: 12px;
+  }
+
+  .edit-name-btn {
+    font-size: 11px;
+    padding: 3px 8px;
   }
 }
 
@@ -579,8 +662,12 @@ textarea,
 }
 
 @media (max-width: 899px) {
-  #touch-controls:not(.hidden) {
+  #game-wrapper.play-mode #touch-controls:not(.hidden) {
     display: flex !important;
+  }
+
+  #game-wrapper.start-mode #touch-controls {
+    display: none !important;
   }
 
   #game-wrapper.play-mode .touch-btn {

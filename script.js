@@ -931,6 +931,17 @@ function syncLayoutMode() {
     rotateHint.classList.toggle('hidden', !showRotate);
     rotateHint.setAttribute('aria-hidden', showRotate ? 'false' : 'true');
   }
+
+  syncTouchControls();
+}
+
+function shouldShowTouchControls() {
+  return isMobile() && (gameState === 'playing' || gameState === 'levelFade');
+}
+
+function syncTouchControls() {
+  if (!touchControls) return;
+  touchControls.classList.toggle('hidden', !shouldShowTouchControls());
 }
 
 function setupTouchControls() {
@@ -2431,7 +2442,55 @@ function drawStartScreen() {
   drawBackground();
   uiButtons = [];
 
-  /* Title — two lines for the full name */
+  const mobile = isMobile();
+  const landscape = mobile && !isPortraitViewport();
+
+  if (landscape) {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#fff';
+    applyHebrewTextStyle(34, true, 'center');
+    ctx.fillText(TEXT.gameTitle, CANVAS_WIDTH / 2, 52);
+    ctx.shadowColor = '#ffd700';
+    ctx.shadowBlur = 16;
+    applyHebrewTextStyle(38, true, 'center');
+    ctx.fillText(TEXT.gameTitleName, CANVAS_WIDTH / 2, 88);
+    ctx.shadowBlur = 0;
+
+    const subW = 760;
+    const subH = 36;
+    const subX = (CANVAS_WIDTH - subW) / 2;
+    const subY = 100;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
+    roundRect(subX, subY, subW, subH, 12);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    applyHebrewTextStyle(17, false, 'center');
+    ctx.fillText(TEXT.subtitle, CANVAS_WIDTH / 2, subY + 24);
+
+    const heroW = 280;
+    const heroH = 400;
+    const heroX = CANVAS_WIDTH / 2 - heroW / 2;
+    const heroY = 118;
+    const previewImg = getImage('girl_play_recorder') || getImage('girl_happy') || getImage('girl_idle');
+    if (previewImg) {
+      ctx.save();
+      ctx.shadowColor = 'rgba(255, 215, 0, 0.45)';
+      ctx.shadowBlur = 28;
+      ctx.drawImage(previewImg, heroX, heroY, heroW, heroH);
+      ctx.restore();
+    } else {
+      drawCharacterPlaceholder(heroX, heroY, heroW, heroH, 1);
+    }
+
+    ctx.fillStyle = '#ffe8ff';
+    applyHebrewTextStyle(22, true, 'center');
+    ctx.fillText(TEXT.chooseDifficulty, CANVAS_WIDTH / 2, 548);
+
+    drawButton(CANVAS_WIDTH / 2 - 330, 578, 310, 54, TEXT.easyMode, 'startEasy');
+    drawButton(CANVAS_WIDTH / 2 + 20, 578, 310, 54, TEXT.hardMode, 'startHard');
+    drawButton(CANVAS_WIDTH - 150, 14, 130, 38, '📖 ' + TEXT.storyButton, 'openStory');
+  } else {
   ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
   ctx.shadowBlur = 8;
   ctx.fillStyle = '#fff';
@@ -2491,10 +2550,10 @@ function drawStartScreen() {
   drawButton(CANVAS_WIDTH / 2 - 320, 628, 300, 48, TEXT.easyMode, 'startEasy');
   drawButton(CANVAS_WIDTH / 2 + 20, 628, 300, 48, TEXT.hardMode, 'startHard');
   drawButton(CANVAS_WIDTH - 164, 20, 140, 44, '📖 ' + TEXT.storyButton, 'openStory');
+  }
 
   resetTextStyle();
   drawScreenFadeOverlay();
-  syncStartPanel();
 }
 
 function drawLifeLostFlash() {
@@ -3042,6 +3101,7 @@ function syncStartPanel() {
     applyNameBlockVisibility();
   }
 
+  syncTouchControls();
   resizeCanvas();
 }
 
@@ -3115,8 +3175,7 @@ function startGame() {
   gameState = 'playing';
   syncStartPanel();
   tryMobileFullscreen();
-  touchControls.classList.remove('hidden');
-  if (isMobile()) touchControls.classList.remove('hidden');
+  syncTouchControls();
   resizeCanvas();
 }
 
