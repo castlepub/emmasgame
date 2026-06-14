@@ -39,6 +39,8 @@ let gameState = 'start'; /* start | playing | riddle | levelComplete | gameOver 
 let currentLevel = 0;
 let score = 0;
 let hearts = 3;
+let maxHearts = 3;
+let difficultyMode = 'easy';
 let muted = false;
 let bgm = null;
 let bgmReady = false;
@@ -78,7 +80,11 @@ let magicRecorder = null;
 /* Riddle state */
 let riddleInput = '';
 let riddleHint = '';
-let riddleShake = 0;
+let riddleFeedback = '';
+let activeRiddleKey = null;
+let riddleLocked = false;
+let levelRiddleTriggered = false;
+let finaleRiddlesComplete = false;
 let jumpHeld = false;
 let melodyStep = 0;
 
@@ -187,27 +193,31 @@ const SPRITE_IMAGE_KEYS = new Set([
 ]);
 
 /* Hebrew UI strings */
-const HEBREW_FONT = '"Segoe UI", Arial, "David", "Rubik", sans-serif';
+const HEBREW_FONT = 'Arial, "Noto Sans Hebrew", sans-serif';
 
 const TEXT = {
   gameTitle: 'הרפתקאת המנגינה הקסומה',
   gameTitleName: 'של אמה',
   subtitle: 'משימת יום הולדת מוזיקלית שנוצרה במיוחד בשבילך',
-  instructions1: 'אספי את תווי המוזיקה, הימנעי מענני השתיקה,',
+  instructions1: 'אספי את תווי המוזיקה, הימנעי מענני השקט,',
   instructions2: 'והשתמשי בחליל הקסום שלך כדי להחזיר את המוזיקה לעולם.',
   startButton: 'התחלת המסע',
+  chooseDifficulty: 'בחרי רמת קושי:',
+  easyMode: 'מצב קל',
+  hardMode: 'מצב קשה',
   score: 'ניקוד',
   notes: 'תווים',
-  riddleTitle: '✨ חידה מוזיקלית ✨',
-  riddlePrompt: 'הקלידי תשובה ולחצי Enter',
-  riddleTapHint: '(הקישי על תיבת התשובה כדי להקליד)',
+  riddlePrompt: 'הקלידי תשובה ולחצי שליחה',
   submit: 'שליחה',
-  playRecorderHint: 'לחצי E / ♪ לנגינה!',
+  playRecorderHint: 'לחצי ♪ לנגינה בחליל!',
+  playRecorderRiddleHint: 'עני על החידות כדי לפתוח את החליל!',
   cloudShhh: 'ששש',
-  gameOverTitle: 'אוי לא… השתיקה חזקה מדי!',
+  gameOverTitle: 'אוי לא… השקט חזק מדי!',
   gameOverLine1: 'אל דאגה — כל מוזיקאית גדולה',
   gameOverLine2: 'מתאמנת ומנסה שוב!',
   tryAgain: 'נסי שוב',
+  homeButton: 'בית',
+  playFluteHint: '♪ — אמה מנגנת בחליל!',
   finaleTitle: 'יום הולדת שמח לגיל 8!',
   finaleLines: [
     'מצאת את התווים האבודים,',
@@ -221,6 +231,68 @@ const TEXT = {
   ],
   playAgain: 'שחקי שוב'
 };
+
+const RIDDLES = {
+  forest: {
+    title: '✨ חידה ביער ✨',
+    question:
+      'תו קטן הלך לאיבוד ביער.\nהוא שומע: דו, רה, מי…\nאיזה תו מגיע אחר כך?',
+    answers: ['פה', 'פא', 'fa', 'Fa', 'FA'],
+    hint: 'שירי לאט את הסולם: דו, רה, מי…',
+    correctMessage: 'נכון! מצאת את התו הבא והיער התחיל לשיר שוב.',
+    wrongMessage: 'כמעט! תקשיבי למנגינה ותנסי שוב.'
+  },
+  cloud: {
+    title: '✨ ענני השקט ✨',
+    question:
+      'ענני השקט גנבו את המוזיקה.\nאיזה כלי קסום יכול להחזיר את הצלילים?',
+    answers: ['חליל', 'חלילית', 'חליל צד', 'מוזיקה', 'מנגינה'],
+    hint: 'זה כלי שאפשר לנשוף בו ולנגן איתו מנגינות.',
+    correctMessage: 'מעולה! הצלילים חזרו לרקוד בין העננים.',
+    wrongMessage: 'לא נורא. תחשבי על כלי נשיפה קטן וקסום.'
+  },
+  boss: {
+    title: '✨ ענן הסערה ✨',
+    question:
+      'ענן הסערה יורה ברקים כשהמנגינה נעצרת.\nמה מוזיקאית אמיצה עושה כששיר נהיה קשה?',
+    answers: [
+      'ממשיכה', 'מנסה שוב', 'מתאמנת', 'לא מוותרת',
+      'ממשיכים', 'לנסות שוב', 'להתאמן', 'לא לוותר'
+    ],
+    hint: 'אף אחד לא מנגן מושלם בפעם הראשונה.',
+    correctMessage: 'נכון! האומץ שלך החליש את ענן הסערה.',
+    wrongMessage: 'כמעט. מוזיקה טובה צריכה סבלנות ואומץ.'
+  },
+  finale: {
+    title: '✨ מנגינת יום ההולדת ✨',
+    question: 'מנגינה לא עשויה רק מתווים.\nמה עוד היא צריכה?',
+    answers: ['לב', 'אהבה', 'רגש', 'קסם', 'דמיון', 'שמחה', 'חיוך'],
+    hint: 'המוזיקה הכי יפה מגיעה מבפנים.',
+    correctMessage: 'יפה מאוד! עכשיו המנגינה באמת קסומה.',
+    wrongMessage: 'נסי שוב. תחשבי מה מרגישים כששומעים שיר יפה.'
+  },
+  birthday: {
+    title: '✨ שאלת הסיום ✨',
+    question: 'היום הוא יום מיוחד במיוחד.\nבת כמה מוזיקאית יום ההולדת?',
+    answers: ['8', 'שמונה', 'בת שמונה', 'בת 8'],
+    hint: 'תספרי את הנרות על העוגה.',
+    correctMessage: 'נכון! יום הולדת 8 שמח!',
+    wrongMessage: 'כמעט. תנסי לחשוב על מספר הנרות.'
+  }
+};
+
+function normalizeRiddleAnswer(str) {
+  return str.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function isRiddleAnswerCorrect(riddle, input) {
+  const normalized = normalizeRiddleAnswer(input);
+  return riddle.answers.some((a) => normalizeRiddleAnswer(a) === normalized);
+}
+
+function getActiveRiddle() {
+  return activeRiddleKey ? RIDDLES[activeRiddleKey] : null;
+}
 
 function applyHebrewTextStyle(size, bold, align) {
   ctx.direction = 'rtl';
@@ -242,27 +314,17 @@ const LEVELS = [
     notesRequired: 16,
     goldenCount: 0,
     enemyCount: 10,
-    enemySpeed: 1.5,
-    riddle: {
-      question: 'איזה תו בא אחרי דו?',
-      answers: ['re', 'Re', 'RE', 'רה'],
-      hint: 'חשבי על הצעד הבא בדו-רֵ-מִי… זה מתחרז עם "ראי"!'
-    }
+    enemySpeed: 1.5
   },
   {
-    name: 'ענני השתיקה',
+    name: 'ענני השקט',
     bgKey: 'cloud_background',
     bgGradient: ['#5eb8ff', '#a8d8ff', '#ffe8a0'],
     worldWidth: 7200,
     notesRequired: 18,
     goldenCount: 4,
     enemyCount: 12,
-    enemySpeed: 1.65,
-    riddle: {
-      question: 'באיזה כלי נגינה את כבר מנגנת?',
-      answers: ['recorder', 'Recorder', 'RECORDER', 'flute', 'Flute', 'חלילית', 'חליל'],
-      hint: 'זה כלי נגינה קטן שמנשפים אליו — יש לך אחד כזה במשחק!'
-    }
+    enemySpeed: 1.65
   },
   {
     name: 'מנגינת יום ההולדת',
@@ -273,10 +335,63 @@ const LEVELS = [
     goldenCount: 3,
     enemyCount: 11,
     enemySpeed: 1.4,
-    riddle: null,
     hasMagicRecorder: true
   }
 ];
+
+const DIFFICULTY = {
+  easy: {
+    label: 'קל',
+    hudLabel: 'מצב קל',
+    maxHearts: 5,
+    enemyCountMult: 0.6,
+    enemySpeedMult: 0.72,
+    gapCountOffset: -2,
+    gapWidthMult: 0.82,
+    notesOffset: -4,
+    goldenCountOffset: 0,
+    bossSpeedMult: 0.75,
+    bossShootCooldownMult: 2.6,
+    projectileSpeedMult: 0.58,
+    bossShootRange: 620,
+    invincibleMult: 1.35
+  },
+  hard: {
+    label: 'קשה',
+    hudLabel: 'מצב קשה',
+    maxHearts: 2,
+    enemyCountMult: 1.4,
+    enemySpeedMult: 1.28,
+    gapCountOffset: 2,
+    gapWidthMult: 1.22,
+    notesOffset: 2,
+    goldenCountOffset: 1,
+    bossSpeedMult: 1.28,
+    bossShootCooldownMult: 0.58,
+    projectileSpeedMult: 1.45,
+    bossShootRange: 1100,
+    invincibleMult: 0.72
+  }
+};
+
+function getDifficulty() {
+  return DIFFICULTY[difficultyMode] || DIFFICULTY.easy;
+}
+
+function buildLevelConfig(baseCfg, levelIndex) {
+  const d = getDifficulty();
+  const baseGapCount = 6 + levelIndex * 2;
+
+  return {
+    ...baseCfg,
+    notesRequired: Math.max(10, baseCfg.notesRequired + d.notesOffset),
+    goldenCount: Math.max(0, (baseCfg.goldenCount || 0) + d.goldenCountOffset),
+    enemyCount: Math.max(4, Math.round(baseCfg.enemyCount * d.enemyCountMult)),
+    enemySpeed: baseCfg.enemySpeed * d.enemySpeedMult,
+    gapCount: Math.max(2, baseGapCount + d.gapCountOffset),
+    gapWidthMult: d.gapWidthMult
+  };
+}
 
 /* ==========================================================================
    2. ASSET LOADING
@@ -601,17 +716,21 @@ function createEnemy(x, y, range, speed) {
 }
 
 function createBoss(x, y) {
+  const d = getDifficulty();
+  const baseCooldown = Math.max(2200, 3200 - currentLevel * 260);
+  const level0Bonus = currentLevel === 0 ? 1.35 : 1;
+
   return {
     x,
     y,
     startX: x,
     range: 95,
-    speed: 1.15 + currentLevel * 0.12,
+    speed: (1.15 + currentLevel * 0.12) * d.bossSpeedMult,
     direction: 1,
     width: BOSS_WIDTH,
     height: BOSS_HEIGHT,
-    shootTimer: 900,
-    shootCooldown: Math.max(1400, 2400 - currentLevel * 280)
+    shootTimer: 2400 + currentLevel * 400,
+    shootCooldown: baseCooldown * d.bossShootCooldownMult * level0Bonus
   };
 }
 
@@ -741,7 +860,7 @@ function spawnConfetti(count = 80) {
    ========================================================================== */
 
 function buildLevel(levelIndex) {
-  const cfg = LEVELS[levelIndex];
+  const cfg = buildLevelConfig(LEVELS[levelIndex], levelIndex);
   level = cfg;
   currentLevel = levelIndex;
 
@@ -755,7 +874,7 @@ function buildLevel(levelIndex) {
   magicRecorder = null;
 
   /* Ground segments with gaps — falling through a gap is dangerous */
-  buildGroundWithGaps(groundY, cfg.worldWidth, 6 + levelIndex * 2);
+  buildGroundWithGaps(groundY, cfg.worldWidth, cfg.gapCount, cfg.gapWidthMult);
 
   /* Level-specific platforms & note placement */
   if (levelIndex === 0) {
@@ -773,7 +892,8 @@ function buildLevel(levelIndex) {
   }
 
   const bossY = groundY - BOSS_HEIGHT - 170 - levelIndex * 24;
-  boss = createBoss(cfg.worldWidth - 480, bossY);
+  const bossX = cfg.worldWidth - (levelIndex === 0 ? 640 : 480);
+  boss = createBoss(bossX, bossY);
 
   if (cfg.hasMagicRecorder) {
     magicRecorder = createMagicRecorder(cfg.worldWidth - 220, groundY - 90);
@@ -785,6 +905,11 @@ function buildLevel(levelIndex) {
   cameraX = 0;
   riddleInput = '';
   riddleHint = '';
+  riddleFeedback = '';
+  levelRiddleTriggered = false;
+  if (levelIndex !== 2) {
+    finaleRiddlesComplete = false;
+  }
   clearAllInput();
 }
 
@@ -819,8 +944,8 @@ function generateEnemyPositions(cfg) {
   return positions;
 }
 
-function buildGroundWithGaps(groundY, worldWidth, gapCount) {
-  const gapWidth = 110 + (gapCount % 3) * 15;
+function buildGroundWithGaps(groundY, worldWidth, gapCount, gapWidthMult = 1) {
+  const gapWidth = (110 + (gapCount % 3) * 15) * gapWidthMult;
   const segments = gapCount + 1;
   const totalGap = gapCount * gapWidth;
   const segmentWidth = (worldWidth - totalGap) / segments;
@@ -832,15 +957,18 @@ function buildGroundWithGaps(groundY, worldWidth, gapCount) {
 }
 
 function buildJumpChallengeLevel(groundY, worldWidth, noteCount, goldenCount) {
+  const skyNoteCount = (currentLevel === 0 && difficultyMode === 'easy') ? 1 : 2;
+  const chainNoteCount = Math.max(1, noteCount - skyNoteCount);
   let notesPlaced = 0;
   let goldenLeft = goldenCount;
   const startX = 120;
   const endX = worldWidth - 320;
-  const chainSpacing = (endX - startX) / Math.max(1, noteCount - 1);
+  const chainSpacing = (endX - startX) / Math.max(1, chainNoteCount - 1);
   const stepX = Math.min(102, chainSpacing * 0.42);
-  const stepY = 68;
+  const forestEasy = currentLevel === 0 && difficultyMode === 'easy';
+  const stepY = forestEasy ? 56 : 68;
 
-  for (let c = 0; c < noteCount; c++) {
+  for (let c = 0; c < chainNoteCount; c++) {
     const steps = 3 + (c % 2);
     let px = startX + c * chainSpacing;
     let py = groundY - 58;
@@ -871,17 +999,107 @@ function buildJumpChallengeLevel(groundY, worldWidth, noteCount, goldenCount) {
     }
   }
 
-  /* Safety net — always spawn exactly noteCount reachable notes */
-  while (notesPlaced < noteCount) {
-    const x = startX + notesPlaced * ((endX - startX) / Math.max(1, noteCount - 1));
-    const py = groundY - 105 - (notesPlaced % 4) * 48;
-    platforms.push(createPlatform(x, py + NOTE_SIZE + 14, 100, 22));
+  /* Safety net — always spawn exactly chainNoteCount reachable notes */
+  while (notesPlaced < chainNoteCount) {
+    const x = startX + notesPlaced * ((endX - startX) / Math.max(1, chainNoteCount - 1));
+    const py = groundY - (forestEasy ? 88 : 105) - (notesPlaced % 4) * (forestEasy ? 38 : 48);
+    platforms.push(createPlatform(x, py + NOTE_SIZE + 14, forestEasy ? 112 : 100, 22));
     const isGolden = goldenLeft > 0;
     if (isGolden) goldenLeft--;
     const note = createNote(x + 23, py, isGolden);
     notes.push(note);
     if (isGolden) goldenNotes.push(note);
     notesPlaced++;
+  }
+
+  addSkyChallengeNotes(groundY, worldWidth, goldenLeft, skyNoteCount);
+}
+
+/*
+ * Sky-high bonus notes — tall climbs. Level 1 (easy) gets one gentle tower only.
+ */
+function addSkyChallengeNotes(groundY, worldWidth, goldenLeft, skyNoteCount = 2) {
+  const levelIdx = currentLevel;
+  const easy = difficultyMode === 'easy';
+  const platWBase = easy ? 102 : 74;
+
+  const challenges = [];
+
+  if (levelIdx === 0) {
+    /* Forest — wide stepping tower, reachable without huge leaps */
+    const px = worldWidth * 0.48;
+    let py = groundY - 88;
+    const steps = easy ? 3 : 4;
+    const platList = [];
+    for (let s = 0; s < steps; s++) {
+      platList.push({ x: px + s * 48, y: py, w: platWBase });
+      py -= easy ? 52 : 64;
+    }
+    challenges.push({ platforms: platList, golden: false });
+
+    if (skyNoteCount > 1) {
+      const px2 = worldWidth * 0.58;
+      let py2 = groundY - 100;
+      challenges.push({
+        platforms: [
+          { x: px2, y: py2, w: platWBase },
+          { x: px2 + 58, y: py2 - 52, w: platWBase },
+          { x: px2 + 108, y: py2 - 104, w: platWBase },
+          { x: px2 + 148, y: py2 - 148, w: platWBase }
+        ],
+        golden: false
+      });
+    }
+  } else {
+    challenges.push(
+      {
+        platforms: (() => {
+          const px = worldWidth * (0.32 + levelIdx * 0.04);
+          let py = groundY - 95;
+          const steps = easy ? 4 : 5;
+          const list = [];
+          for (let s = 0; s < steps; s++) {
+            list.push({ x: px + (s % 2) * 8, y: py, w: platWBase - s * 4 });
+            py -= easy ? 64 : 72;
+          }
+          return list;
+        })(),
+        golden: goldenLeft > 0 && levelIdx > 0
+      },
+      {
+        platforms: (() => {
+          const px = worldWidth * (0.62 + levelIdx * 0.03);
+          let py = groundY - 115;
+          return [
+            { x: px, y: py, w: platWBase },
+            { x: px + 70, y: py - 78, w: platWBase - 8 },
+            { x: px + 118, y: py - 158, w: platWBase - 14 },
+            { x: px + 210, y: py - 248, w: easy ? 82 : 68 }
+          ];
+        })(),
+        golden: false
+      }
+    );
+  }
+
+  const activeChallenges = challenges.slice(0, skyNoteCount);
+  for (const challenge of activeChallenges) {
+    const plats = challenge.platforms;
+    for (const p of plats) {
+      platforms.push(createPlatform(p.x, p.y, p.w, 18));
+    }
+
+    const top = plats[plats.length - 1];
+    const isGolden = challenge.golden;
+    if (isGolden) goldenLeft--;
+
+    const note = createNote(
+      top.x + top.w / 2 - NOTE_SIZE / 2,
+      top.y - NOTE_SIZE - 12,
+      isGolden
+    );
+    notes.push(note);
+    if (isGolden) goldenNotes.push(note);
   }
 }
 
@@ -909,7 +1127,8 @@ function updatePlaying(dt) {
 
   /* Recorder play action */
   if (inputPlay() && p.onGround) {
-    if (level.hasMagicRecorder && p.collectedThisLevel >= level.notesRequired && magicRecorder) {
+    if (level.hasMagicRecorder && p.collectedThisLevel >= level.notesRequired &&
+        magicRecorder && finaleRiddlesComplete) {
       const dist = Math.abs(p.x + p.width / 2 - (magicRecorder.x + magicRecorder.width / 2));
       if (dist < 100) {
         p.playingRecorder = true;
@@ -923,6 +1142,7 @@ function updatePlaying(dt) {
     } else if (!level.hasMagicRecorder) {
       p.playingRecorder = true;
       p.playTimer = 600;
+      playFluteTapSound();
     }
   }
 
@@ -1032,12 +1252,19 @@ function updatePlaying(dt) {
     magicRecorder.glowPhase += dt * 0.004;
   }
 
-  /* Check level complete */
-  if (p.collectedThisLevel >= level.notesRequired) {
+  /* Check level complete → riddles */
+  if (p.collectedThisLevel >= level.notesRequired && !levelRiddleTriggered && gameState === 'playing') {
     if (level.hasMagicRecorder) {
-      /* Wait for recorder interaction — hint shown in draw */
-    } else if (level.riddle && gameState === 'playing') {
-      enterRiddleState();
+      if (!finaleRiddlesComplete) {
+        levelRiddleTriggered = true;
+        enterRiddleState('finale');
+      }
+    } else if (currentLevel === 0) {
+      levelRiddleTriggered = true;
+      enterRiddleState('forest');
+    } else if (currentLevel === 1) {
+      levelRiddleTriggered = true;
+      enterRiddleState('cloud');
     }
   }
 
@@ -1055,7 +1282,7 @@ function shootBossProjectile(b) {
   const dx = px - bx;
   const dy = py - by;
   const len = Math.hypot(dx, dy) || 1;
-  const speed = 4.8 + currentLevel * 0.45;
+  const speed = (4.8 + currentLevel * 0.45) * getDifficulty().projectileSpeedMult;
 
   projectiles.push(createProjectile(
     bx - PROJECTILE_SIZE / 2,
@@ -1075,7 +1302,7 @@ function updateBoss(dt, now) {
 
   boss.shootTimer -= dt;
   const distX = Math.abs(player.x - boss.x);
-  if (boss.shootTimer <= 0 && distX < 950) {
+  if (boss.shootTimer <= 0 && distX < getDifficulty().bossShootRange) {
     shootBossProjectile(boss);
     boss.shootTimer = boss.shootCooldown;
   }
@@ -1113,7 +1340,7 @@ function takeDamage() {
   if (now < player.invincibleUntil) return;
 
   hearts--;
-  player.invincibleUntil = now + INVINCIBLE_TIME;
+  player.invincibleUntil = now + INVINCIBLE_TIME * getDifficulty().invincibleMult;
   player.surprisedUntil = now + 800;
   playHitSound();
 
@@ -1171,11 +1398,8 @@ function update(dt) {
   }
 
   if (gameState === 'riddle') {
-    const panel = document.getElementById('riddle-panel');
-    if (panel) panel.classList.toggle('shake', riddleShake > 0);
+    updateRiddlePanel();
   }
-
-  if (riddleShake > 0) riddleShake -= dt;
 }
 
 /* ==========================================================================
@@ -1415,7 +1639,8 @@ function drawMagicRecorder() {
   if (player && player.collectedThisLevel >= level.notesRequired) {
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
     applyHebrewTextStyle(14, true, 'center');
-    ctx.fillText(TEXT.playRecorderHint, sx + magicRecorder.width / 2, magicRecorder.y - 12);
+    const hint = finaleRiddlesComplete ? TEXT.playRecorderHint : TEXT.playRecorderRiddleHint;
+    ctx.fillText(hint, sx + magicRecorder.width / 2, magicRecorder.y - 12);
   }
 }
 
@@ -1546,7 +1771,8 @@ function drawHUD() {
   ctx.fill();
 
   /* Hearts */
-  for (let i = 0; i < 3; i++) {
+  const heartSlots = maxHearts;
+  for (let i = 0; i < heartSlots; i++) {
     const hx = 32 + i * 36;
     const hy = 24;
     const heartImg = getImage('heart');
@@ -1566,16 +1792,32 @@ function drawHUD() {
   applyHebrewTextStyle(22, true, 'right');
   ctx.fillText(TEXT.score + ': ' + score, 310, 42);
 
-  /* Level name */
+  /* Level name + difficulty */
   const lvlName = level ? level.name : '';
+  const diffLabel = getDifficulty().hudLabel;
   applyHebrewTextStyle(22, true, 'center');
-  ctx.fillText(lvlName, CANVAS_WIDTH / 2, 42);
+  ctx.fillText(lvlName + ' · ' + diffLabel, CANVAS_WIDTH / 2, 42);
 
   /* Notes progress */
   if (level && player) {
     applyHebrewTextStyle(18, false, 'left');
-    ctx.fillText(TEXT.notes + ': ' + player.collectedThisLevel + ' / ' + level.notesRequired, CANVAS_WIDTH - 240, 42);
+    ctx.fillText(TEXT.notes + ': ' + player.collectedThisLevel + ' / ' + level.notesRequired, CANVAS_WIDTH - 300, 42);
   }
+
+  /* Home — back to difficulty select */
+  const homeBtn = { x: CANVAS_WIDTH - 118, y: 16, w: 58, h: 40 };
+  ctx.fillStyle = '#ffe8ff';
+  roundRect(homeBtn.x, homeBtn.y, homeBtn.w, homeBtn.h, 10);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(90, 48, 128, 0.35)';
+  ctx.lineWidth = 2;
+  roundRect(homeBtn.x, homeBtn.y, homeBtn.w, homeBtn.h, 10);
+  ctx.stroke();
+  ctx.fillStyle = '#5a3080';
+  applyHebrewTextStyle(17, true, 'center');
+  ctx.fillText(TEXT.homeButton, homeBtn.x + homeBtn.w / 2, homeBtn.y + 27);
+  resetTextStyle();
+  uiButtons.push({ ...homeBtn, action: goHome });
 
   /* Mute button */
   const muteBtn = { x: CANVAS_WIDTH - 56, y: 16, w: 40, h: 40 };
@@ -1640,7 +1882,12 @@ function drawButton(x, y, w, h, label, id) {
 }
 
 function handleButton(id) {
-  if (id === 'start') {
+  if (id === 'startEasy') {
+    difficultyMode = 'easy';
+    tryStartBackgroundMusic();
+    startGame();
+  } else if (id === 'startHard') {
+    difficultyMode = 'hard';
     tryStartBackgroundMusic();
     startGame();
   } else if (id === 'retry') {
@@ -1648,6 +1895,8 @@ function handleButton(id) {
   } else if (id === 'playAgain') {
     resetGame();
     startGame();
+  } else if (id === 'home') {
+    goHome();
   }
 }
 
@@ -1702,13 +1951,18 @@ function drawStartScreen() {
     drawCharacterPlaceholder(heroX, heroY, heroW, heroH, 1);
   }
 
-  drawOverlayPanel(CANVAS_WIDTH / 2 - 340, 568, 680, 72);
+  drawOverlayPanel(CANVAS_WIDTH / 2 - 340, 552, 680, 72);
   ctx.fillStyle = '#fff';
   applyHebrewTextStyle(18, false, 'center');
-  ctx.fillText(TEXT.instructions1, CANVAS_WIDTH / 2, 602);
-  ctx.fillText(TEXT.instructions2, CANVAS_WIDTH / 2, 628);
+  ctx.fillText(TEXT.instructions1, CANVAS_WIDTH / 2, 586);
+  ctx.fillText(TEXT.instructions2, CANVAS_WIDTH / 2, 612);
 
-  drawButton(CANVAS_WIDTH / 2 - 150, 652, 300, 50, TEXT.startButton, 'start');
+  ctx.fillStyle = '#ffe8ff';
+  applyHebrewTextStyle(20, true, 'center');
+  ctx.fillText(TEXT.chooseDifficulty, CANVAS_WIDTH / 2, 644);
+
+  drawButton(CANVAS_WIDTH / 2 - 320, 658, 300, 48, TEXT.easyMode, 'startEasy');
+  drawButton(CANVAS_WIDTH / 2 + 20, 658, 300, 48, TEXT.hardMode, 'startHard');
 
   resetTextStyle();
 }
@@ -1745,7 +1999,8 @@ function drawGameOverScreen() {
     drawCharacterPlaceholder(CANVAS_WIDTH / 2 - heroW / 2, 275, heroW, heroH, 1);
   }
 
-  drawButton(CANVAS_WIDTH / 2 - 100, 530, 200, 52, TEXT.tryAgain, 'retry');
+  drawButton(CANVAS_WIDTH / 2 - 220, 530, 200, 52, TEXT.tryAgain, 'retry');
+  drawButton(CANVAS_WIDTH / 2 + 20, 530, 200, 52, TEXT.homeButton, 'home');
   resetTextStyle();
 }
 
@@ -1778,7 +2033,8 @@ function drawFinaleScreen() {
     drawCharacterPlaceholder(CANVAS_WIDTH / 2 - 50, 400, 100, 120, 1);
   }
 
-  drawButton(CANVAS_WIDTH / 2 - 100, 540, 200, 50, TEXT.playAgain, 'playAgain');
+  drawButton(CANVAS_WIDTH / 2 - 220, 540, 200, 50, TEXT.playAgain, 'playAgain');
+  drawButton(CANVAS_WIDTH / 2 + 20, 540, 200, 50, TEXT.homeButton, 'home');
   resetTextStyle();
 }
 
@@ -1786,8 +2042,13 @@ function syncRiddleInputEl() {
   if (riddleInputEl) riddleInputEl.value = riddleInput;
 }
 
-function enterRiddleState() {
+function enterRiddleState(riddleKey) {
+  activeRiddleKey = riddleKey;
   gameState = 'riddle';
+  riddleInput = '';
+  riddleHint = '';
+  riddleFeedback = '';
+  riddleLocked = false;
   clearAllInput();
   touchControls.classList.add('hidden');
 
@@ -1803,30 +2064,30 @@ function enterRiddleState() {
     overlay.setAttribute('aria-hidden', 'false');
   }
 
+  const promptEl = document.getElementById('riddle-prompt');
+  if (promptEl) promptEl.textContent = TEXT.riddlePrompt;
+
   showRiddleInput();
   updateRiddlePanel();
 }
 
 function updateRiddlePanel() {
+  const riddle = getActiveRiddle();
   const questionEl = document.getElementById('riddle-question');
   const hintEl = document.getElementById('riddle-hint-text');
+  const feedbackEl = document.getElementById('riddle-feedback-text');
   const titleEl = document.getElementById('riddle-title');
 
-  if (titleEl) titleEl.textContent = TEXT.riddleTitle;
-  if (questionEl && level && level.riddle) {
-    questionEl.textContent = level.riddle.question;
-  }
-  if (hintEl) {
-    hintEl.textContent = riddleHint || '';
-  }
-}
-
-function updateRiddleHintDisplay() {
-  updateRiddlePanel();
+  if (titleEl && riddle) titleEl.textContent = riddle.title;
+  if (questionEl && riddle) questionEl.textContent = riddle.question;
+  if (feedbackEl) feedbackEl.textContent = riddleFeedback || '';
+  if (hintEl) hintEl.textContent = riddleHint || '';
 }
 
 function exitRiddleState() {
   hideRiddleInput();
+  activeRiddleKey = null;
+  riddleLocked = false;
   const overlay = document.getElementById('riddle-overlay');
   if (overlay) {
     overlay.classList.add('hidden');
@@ -1851,29 +2112,61 @@ function hideRiddleInput() {
 }
 
 function submitRiddle() {
-  if (!level || !level.riddle) return;
+  const riddle = getActiveRiddle();
+  if (!riddle || riddleLocked) return;
+
   if (riddleInputEl) riddleInput = riddleInputEl.value;
   const normalized = riddleInput.trim();
-  const correct = level.riddle.answers.some((a) =>
-    a.toLowerCase() === normalized.toLowerCase() || a === normalized
-  );
 
-  if (correct) {
+  if (!normalized) {
+    riddleFeedback = 'כתבי תשובה קטנה — את יכולה!';
+    riddleHint = riddle.hint;
+    updateRiddlePanel();
+    showRiddleInput();
+    return;
+  }
+
+  if (isRiddleAnswerCorrect(riddle, normalized)) {
+    riddleLocked = true;
     playRiddleCorrectSound();
+    riddleFeedback = riddle.correctMessage;
     riddleHint = '';
-    updateRiddleHintDisplay();
-    exitRiddleState();
-    if (currentLevel < LEVELS.length - 1) {
-      buildLevel(currentLevel + 1);
-      gameState = 'playing';
-      if (isMobile()) touchControls.classList.remove('hidden');
-    }
+    updateRiddlePanel();
+    hideRiddleInput();
+    setTimeout(() => handleRiddleSuccess(), 1800);
   } else {
-    riddleHint = level.riddle.hint;
-    riddleShake = 300;
-    updateRiddleHintDisplay();
+    riddleFeedback = riddle.wrongMessage;
+    riddleHint = riddle.hint;
+    updateRiddlePanel();
     showRiddleInput();
   }
+}
+
+function handleRiddleSuccess() {
+  const key = activeRiddleKey;
+  riddleLocked = false;
+  riddleFeedback = '';
+  riddleHint = '';
+  exitRiddleState();
+
+  if (key === 'forest') {
+    buildLevel(1);
+    gameState = 'playing';
+  } else if (key === 'cloud') {
+    enterRiddleState('boss');
+    return;
+  } else if (key === 'boss') {
+    buildLevel(2);
+    gameState = 'playing';
+  } else if (key === 'finale') {
+    enterRiddleState('birthday');
+    return;
+  } else if (key === 'birthday') {
+    finaleRiddlesComplete = true;
+    gameState = 'playing';
+  }
+
+  if (isMobile()) touchControls.classList.remove('hidden');
 }
 
 /* ==========================================================================
@@ -1978,6 +2271,11 @@ function playRiddleCorrectSound() {
   playTone(784, 0.25, 'sine', 0.1, 0.3);
 }
 
+function playFluteTapSound() {
+  playTone(659, 0.12, 'sine', 0.09);
+  playTone(784, 0.14, 'sine', 0.08, 0.08);
+}
+
 function playFinalArpeggio() {
   const notes = [523, 659, 784, 1047, 1319];
   notes.forEach((freq, i) => playTone(freq, 0.3, 'sine', 0.1, i * 0.12));
@@ -1987,10 +2285,17 @@ function playFinalArpeggio() {
    10. RESTART / RESET
    ========================================================================== */
 
+function applyDifficultyHearts() {
+  maxHearts = getDifficulty().maxHearts;
+  hearts = maxHearts;
+}
+
 function startGame() {
   score = 0;
-  hearts = 3;
+  applyDifficultyHearts();
   melodyStep = 0;
+  finaleRiddlesComplete = false;
+  levelRiddleTriggered = false;
   buildLevel(0);
   gameState = 'playing';
   touchControls.classList.remove('hidden');
@@ -1999,7 +2304,7 @@ function startGame() {
 }
 
 function restartLevel() {
-  hearts = 3;
+  applyDifficultyHearts();
   buildLevel(currentLevel);
   gameState = 'playing';
   if (isMobile()) touchControls.classList.remove('hidden');
@@ -2008,15 +2313,28 @@ function restartLevel() {
 
 function resetGame() {
   score = 0;
+  maxHearts = 3;
   hearts = 3;
   currentLevel = 0;
   melodyStep = 0;
+  finaleRiddlesComplete = false;
+  levelRiddleTriggered = false;
+  activeRiddleKey = null;
+  riddleFeedback = '';
+  riddleHint = '';
+  riddleLocked = false;
   particles.length = 0;
   confetti.length = 0;
   jumpHeld = false;
   exitRiddleState();
   gameState = 'start';
   touchControls.classList.add('hidden');
+  player = null;
+  level = null;
+}
+
+function goHome() {
+  resetGame();
 }
 
 /* ==========================================================================
