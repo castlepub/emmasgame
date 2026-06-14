@@ -888,6 +888,32 @@ function isMobile() {
   return window.innerWidth < 900 || 'ontouchstart' in window;
 }
 
+function isPortraitViewport() {
+  return window.innerHeight > window.innerWidth;
+}
+
+function usesPlayLayout() {
+  return ['playing', 'levelFade', 'riddle', 'gameOver', 'finale'].includes(gameState);
+}
+
+function syncLayoutMode() {
+  const wrapper = document.getElementById('game-wrapper');
+  const rotateHint = document.getElementById('rotate-hint');
+  const playLayout = usesPlayLayout();
+  const mobile = isMobile();
+
+  if (wrapper) {
+    wrapper.classList.toggle('play-mode', playLayout && mobile);
+    wrapper.classList.toggle('mobile-layout', mobile);
+  }
+
+  if (rotateHint) {
+    const showRotate = mobile && playLayout && isPortraitViewport();
+    rotateHint.classList.toggle('hidden', !showRotate);
+    rotateHint.setAttribute('aria-hidden', showRotate ? 'false' : 'true');
+  }
+}
+
 function setupTouchControls() {
   const bind = (id, key) => {
     const el = document.getElementById(id);
@@ -1446,8 +1472,11 @@ function updatePlaying(dt) {
         playFinalArpeggio();
         setTimeout(() => {
           gameState = 'finale';
+          touchControls.classList.add('hidden');
           spawnConfetti(100);
           submitScoreToLeaderboard(true);
+          syncLayoutMode();
+          resizeCanvas();
         }, 2200);
       }
     } else if (!level.hasMagicRecorder) {
@@ -1666,6 +1695,8 @@ function loseLifeAndRestart() {
     gameState = 'gameOver';
     touchControls.classList.add('hidden');
     syncStartPanel();
+    syncLayoutMode();
+    resizeCanvas();
     return;
   }
 
@@ -2113,57 +2144,106 @@ function truncateDisplayName(name, maxLen = 14) {
 
 function drawHUD() {
   uiButtons = [];
+  const compact = isMobile();
+  const barY = compact ? 8 : 12;
+  const barH = compact ? 50 : 58;
+  const barR = compact ? 12 : 16;
+  const heartsStartX = compact ? 24 : 32;
+  const heartSize = compact ? 22 : 28;
+  const heartStep = compact ? 26 : 36;
+  const heartsEndX = heartsStartX + (MAX_HEARTS - 1) * heartStep + heartSize;
 
-  /* Top bar panel */
   ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-  roundRect(16, 12, CANVAS_WIDTH - 32, 58, 16);
+  roundRect(16, barY, CANVAS_WIDTH - 32, barH, barR);
   ctx.fill();
 
-  /* Hearts */
+  const heartY = barY + (compact ? 13 : 14);
   for (let i = 0; i < MAX_HEARTS; i++) {
-    const hx = 32 + i * 36;
-    const hy = 26;
+    const hx = heartsStartX + i * heartStep;
+    const hy = heartY;
     const heartImg = getImage('heart');
     if (heartImg && i < hearts) {
-      ctx.drawImage(heartImg, hx, hy, 28, 28);
+      ctx.drawImage(heartImg, hx, hy, heartSize, heartSize);
     } else if (heartImg && i >= hearts) {
       ctx.globalAlpha = 0.25;
-      ctx.drawImage(heartImg, hx, hy, 28, 28);
+      ctx.drawImage(heartImg, hx, hy, heartSize, heartSize);
       ctx.globalAlpha = 1;
     } else {
-      drawHeartPlaceholder(hx + 14, hy + 14, i < hearts);
+      drawHeartPlaceholder(hx + heartSize / 2, hy + heartSize / 2, i < hearts);
     }
   }
 
-  /* Lives */
-  applyHebrewTextStyle(18, true, 'right');
-  ctx.fillStyle = '#5a3080';
-  ctx.fillText(TEXT.lives + ': ' + lives + ' / ' + MAX_LIVES, 168, 44);
+  const statsX = heartsEndX + (compact ? 10 : 14);
+  const statsMidY = barY + barH / 2 + (compact ? 5 : 6);
 
-  /* Score */
-  ctx.fillStyle = '#5a3080';
-  applyHebrewTextStyle(22, true, 'right');
-  ctx.fillText(TEXT.score + ': ' + score, 310, 44);
+  if (compact) {
+    applyHebrewTextStyle(14, true, 'left');
+    ctx.direction = 'ltr';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#5a3080';
+    ctx.fillText(lives + '/' + MAX_LIVES + '  ·  ' + TEXT.score + ' ' + score, statsX, statsMidY);
 
-  /* Player name + level */
-  const lvlName = level ? level.name : '';
-  const diffLabel = getDifficulty().hudLabel;
-  const displayName = truncateDisplayName(playerName || getPlayerName());
-  applyHebrewTextStyle(16, true, 'center');
-  ctx.fillStyle = '#7a4cb0';
-  ctx.fillText(TEXT.playerLabel + ': ' + displayName, CANVAS_WIDTH / 2, 34);
-  applyHebrewTextStyle(20, true, 'center');
-  ctx.fillStyle = '#5a3080';
-  ctx.fillText(lvlName + ' · ' + diffLabel, CANVAS_WIDTH / 2, 56);
+    const lvlName = level ? level.name : '';
+    const diffLabel = getDifficulty().hudLabel;
+    const shortLevel = lvlName.length > 14 ? lvlName.slice(0, 13) + '…' : lvlName;
+    applyHebrewTextStyle(14, true, 'center');
+    ctx.direction = 'rtl';
+    ctx.textAlign = 'center';
+    ctx.fillText(shortLevel + ' · ' + diffLabel, CANVAS_WIDTH / 2, statsMidY);
 
-  /* Notes progress */
-  if (level && player) {
-    applyHebrewTextStyle(18, false, 'left');
-    ctx.fillText(TEXT.notes + ': ' + player.collectedThisLevel + ' / ' + level.notesRequired, CANVAS_WIDTH - 300, 44);
+    if (level && player) {
+      applyHebrewTextStyle(13, false, 'left');
+      ctx.direction = 'ltr';
+      ctx.textAlign = 'left';
+      ctx.fillText(
+        TEXT.notes + ' ' + player.collectedThisLevel + '/' + level.notesRequired,
+        CANVAS_WIDTH - 248,
+        statsMidY
+      );
+    }
+  } else {
+    applyHebrewTextStyle(17, true, 'left');
+    ctx.direction = 'ltr';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#5a3080';
+    ctx.fillText(TEXT.lives + ': ' + lives + '/' + MAX_LIVES, statsX, statsMidY);
+
+    ctx.fillStyle = '#5a3080';
+    applyHebrewTextStyle(19, true, 'left');
+    ctx.fillText(TEXT.score + ': ' + score, statsX + 118, statsMidY);
+
+    const lvlName = level ? level.name : '';
+    const diffLabel = getDifficulty().hudLabel;
+    const displayName = truncateDisplayName(playerName || getPlayerName());
+    applyHebrewTextStyle(16, true, 'center');
+    ctx.direction = 'rtl';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#7a4cb0';
+    ctx.fillText(TEXT.playerLabel + ': ' + displayName, CANVAS_WIDTH / 2, barY + 22);
+    applyHebrewTextStyle(18, true, 'center');
+    ctx.fillStyle = '#5a3080';
+    ctx.fillText(lvlName + ' · ' + diffLabel, CANVAS_WIDTH / 2, barY + 42);
+
+    if (level && player) {
+      applyHebrewTextStyle(17, false, 'left');
+      ctx.direction = 'ltr';
+      ctx.textAlign = 'left';
+      ctx.fillText(
+        TEXT.notes + ': ' + player.collectedThisLevel + '/' + level.notesRequired,
+        CANVAS_WIDTH - 300,
+        statsMidY
+      );
+    }
   }
 
-  /* Home — back to difficulty select */
-  const homeBtn = { x: CANVAS_WIDTH - 118, y: 18, w: 58, h: 40 };
+  ctx.direction = 'rtl';
+
+  const homeBtn = {
+    x: CANVAS_WIDTH - (compact ? 104 : 118),
+    y: barY + (compact ? 6 : 6),
+    w: compact ? 52 : 58,
+    h: compact ? 36 : 40
+  };
   ctx.fillStyle = '#ffe8ff';
   roundRect(homeBtn.x, homeBtn.y, homeBtn.w, homeBtn.h, 10);
   ctx.fill();
@@ -2178,7 +2258,12 @@ function drawHUD() {
   uiButtons.push({ ...homeBtn, action: goHome });
 
   /* Mute button */
-  const muteBtn = { x: CANVAS_WIDTH - 56, y: 18, w: 40, h: 40 };
+  const muteBtn = {
+    x: CANVAS_WIDTH - (compact ? 48 : 56),
+    y: barY + (compact ? 6 : 6),
+    w: compact ? 36 : 40,
+    h: compact ? 36 : 40
+  };
   ctx.fillStyle = muted ? '#ccc' : '#e8d4ff';
   roundRect(muteBtn.x, muteBtn.y, muteBtn.w, muteBtn.h, 10);
   ctx.fill();
@@ -3006,22 +3091,34 @@ function applyDifficultyHearts() {
    ========================================================================== */
 
 function resizeCanvas() {
+  syncLayoutMode();
+
   const wrapper = document.getElementById('game-wrapper');
   const startPanel = document.getElementById('start-panel');
+  const mobile = isMobile();
+  const touchOverlay = mobile && usesPlayLayout();
+
   const startPanelExtra = (gameState === 'start' && startPanel && !startPanel.classList.contains('hidden'))
     ? startPanel.offsetHeight + 14
     : 0;
-  const touchExtra = (touchControls && !touchControls.classList.contains('hidden'))
+
+  const touchExtra = (!touchOverlay && touchControls && !touchControls.classList.contains('hidden'))
     ? touchControls.offsetHeight + 10
     : 0;
-  const ww = wrapper.clientWidth - 16;
-  const wh = wrapper.clientHeight - 24 - startPanelExtra - touchExtra;
-  const scale = Math.min(ww / CANVAS_WIDTH, wh / CANVAS_HEIGHT, 1);
+
+  const padX = touchOverlay ? 0 : 16;
+  const padY = touchOverlay ? 0 : 24;
+  const ww = wrapper.clientWidth - padX;
+  let wh = wrapper.clientHeight - padY - startPanelExtra - touchExtra;
+
+  if (touchOverlay) {
+    wh = wrapper.clientHeight - startPanelExtra;
+  }
+
+  const maxScale = touchOverlay ? 3 : 1;
+  const scale = Math.min(ww / CANVAS_WIDTH, wh / CANVAS_HEIGHT, maxScale);
   canvas.style.width = CANVAS_WIDTH * scale + 'px';
   canvas.style.height = CANVAS_HEIGHT * scale + 'px';
-  if (touchControls) {
-    touchControls.style.maxWidth = canvas.style.width;
-  }
 }
 
 function render() {
@@ -3084,6 +3181,9 @@ async function init() {
   setupNameInput();
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('orientationchange', () => {
+    setTimeout(resizeCanvas, 120);
+  });
 
   await loadAllAssets();
   initBackgroundMusic();

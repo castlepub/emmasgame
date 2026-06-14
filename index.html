@@ -2,7 +2,7 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>הרפתקאת המנגינה הקסומה של אמה</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -10,6 +10,24 @@
   <div id="game-wrapper">
     <div id="game-stage">
       <canvas id="game-canvas" width="1280" height="720"></canvas>
+
+      <div id="rotate-hint" class="rotate-hint hidden" aria-hidden="true">
+        <div class="rotate-hint-box">
+          <span class="rotate-icon" aria-hidden="true">📱</span>
+          <p>סובבי את המסך לאורך לתצוגה מלאה</p>
+        </div>
+      </div>
+
+      <div id="touch-controls" class="hidden">
+        <div class="touch-pad touch-pad-left">
+          <button type="button" id="btn-left" class="touch-btn" aria-label="זוזי שמאלה">◀</button>
+          <button type="button" id="btn-right" class="touch-btn" aria-label="זוזי ימינה">▶</button>
+        </div>
+        <div class="touch-pad touch-pad-right">
+          <button type="button" id="btn-jump" class="touch-btn" aria-label="קפיצה">▲</button>
+          <button type="button" id="btn-play" class="touch-btn touch-btn-play" aria-label="נגינה בחליל">♪</button>
+        </div>
+      </div>
 
       <div id="riddle-overlay" class="hidden" aria-hidden="true">
         <div id="riddle-panel">
@@ -42,17 +60,6 @@
           <h3 id="leaderboard-title">🏆 טבלת המובילים</h3>
           <ol id="leaderboard-list"></ol>
         </div>
-      </div>
-    </div>
-
-    <div id="touch-controls" class="hidden">
-      <div class="touch-pad touch-pad-left">
-        <button type="button" id="btn-left" class="touch-btn" aria-label="זוזי שמאלה">◀</button>
-        <button type="button" id="btn-right" class="touch-btn" aria-label="זוזי ימינה">▶</button>
-      </div>
-      <div class="touch-pad touch-pad-right">
-        <button type="button" id="btn-jump" class="touch-btn" aria-label="קפיצה">▲</button>
-        <button type="button" id="btn-play" class="touch-btn touch-btn-play" aria-label="נגינה בחליל">♪</button>
       </div>
     </div>
   </div>
