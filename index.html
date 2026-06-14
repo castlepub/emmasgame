@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>הרפתקאת המנגינה הקסומה של אמה</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-wrapper">
+    <div id="game-stage">
+      <canvas id="game-canvas" width="1280" height="720"></canvas>
+
+      <!-- Riddle modal -->
+      <div id="riddle-overlay" class="hidden" aria-hidden="true">
+        <div id="riddle-panel">
+          <h2 id="riddle-title">✨ חידה מוזיקלית ✨</h2>
+          <p id="riddle-question"></p>
+          <p id="riddle-prompt">הקלידי תשובה ולחצי Enter או שליחה</p>
+          <input type="text" id="riddle-input" dir="rtl" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="40" placeholder="התשובה שלך…">
+          <button type="button" id="riddle-submit-btn">שליחה</button>
+          <p id="riddle-hint-text" aria-live="polite"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Touch bar — below the game, never on the canvas art -->
+    <div id="touch-controls" class="hidden">
+      <div class="touch-pad touch-pad-left">
+        <button type="button" id="btn-left" class="touch-btn" aria-label="זוזי שמאלה">◀</button>
+        <button type="button" id="btn-right" class="touch-btn" aria-label="זוזי ימינה">▶</button>
+      </div>
+      <div class="touch-pad touch-pad-right">
+        <button type="button" id="btn-jump" class="touch-btn" aria-label="קפיצה">▲</button>
+        <button type="button" id="btn-play" class="touch-btn touch-btn-play" aria-label="נגינה בחליל">♪</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
