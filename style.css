@@ -64,7 +64,7 @@ textarea,
 }
 
 #game-wrapper.play-mode {
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   background: #0a0612;
@@ -83,7 +83,7 @@ textarea,
 }
 
 #game-wrapper.play-mode #game-stage {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -520,18 +520,14 @@ textarea,
   display: none;
 }
 
-#game-viewport #touch-controls {
+#game-wrapper.play-mode #touch-controls {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  max-width: none;
+  inset: 0;
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  padding: 8px max(10px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-right));
-  background: linear-gradient(to top, rgba(10, 6, 18, 0.78) 0%, rgba(10, 6, 18, 0.3) 55%, transparent 100%);
+  align-items: center;
+  padding: 0 max(4px, env(safe-area-inset-left)) max(4px, env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-right));
+  background: none;
   border: none;
   border-radius: 0;
   box-shadow: none;
@@ -658,6 +654,23 @@ textarea,
 @media (min-width: 900px) {
   #touch-controls {
     display: none !important;
+  }
+}
+
+@media (max-width: 899px) and (orientation: landscape) {
+  #game-wrapper.play-mode #touch-controls {
+    align-items: center;
+    padding-left: max(6px, env(safe-area-inset-left));
+    padding-right: max(6px, env(safe-area-inset-right));
+  }
+
+  #game-wrapper.play-mode .touch-pad-right {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  #game-wrapper.play-mode .touch-btn-play {
+    margin-bottom: 0;
   }
 }
 

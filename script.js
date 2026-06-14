@@ -3245,11 +3245,13 @@ function resizeCanvas() {
     ? startPanel.offsetHeight + 14
     : 0;
 
+  const stage = document.getElementById('game-stage');
   let ww;
   let wh;
   if (mobilePlay) {
-    ww = wrapper.clientWidth;
-    wh = wrapper.clientHeight;
+    const vv = window.visualViewport;
+    ww = stage ? stage.clientWidth : (vv ? vv.width : wrapper.clientWidth);
+    wh = stage ? stage.clientHeight : (vv ? vv.height : wrapper.clientHeight);
   } else {
     ww = wrapper.clientWidth - 16;
     wh = wrapper.clientHeight - 24 - startPanelExtra;
@@ -3336,6 +3338,9 @@ async function init() {
   window.addEventListener('orientationchange', () => {
     setTimeout(resizeCanvas, 120);
   });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', resizeCanvas);
+  }
 
   await loadAllAssets();
   initBackgroundMusic();
