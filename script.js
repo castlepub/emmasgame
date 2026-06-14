@@ -83,6 +83,9 @@ let enemies = [];
 let boss = null;
 let projectiles = [];
 let platforms = [];
+let groundGaps = [];
+let lastSafeX = 80;
+let lastSafeY = 0;
 let magicRecorder = null;
 
 /* Riddle state */
@@ -263,7 +266,8 @@ const TEXT = {
   leaderboardTitle: '🏆 טבלת המובילים',
   leaderboardEmpty: 'עדיין אין ניקוד — היו הראשונות!',
   lifeLostTitle: 'איבדת את כל הלבבות!',
-  lifeLostLine: 'מתחילים שוב מההתחלה…',
+  lifeLostLine: 'מתחילים שוב מההתחלה — הניקוד נשמר!',
+  lifeLostScoreKept: 'ניקוד מצטבר:',
   lifeLostRemaining: 'נותרו',
   lifeLostSuffix: 'חיים',
   riddlePrompt: 'הקלידי תשובה ולחצי שליחה',
@@ -1080,8 +1084,40 @@ function createProjectile(x, y, vx, vy) {
   };
 }
 
-function createPlatform(x, y, w, h) {
-  return { x, y, width: w, height: h };
+function createPlatform(x, y, w, h, opts = {}) {
+  return { x, y, width: w, height: h, isGround: !!opts.isGround };
+}
+
+function getGroundY() {
+  return CANVAS_HEIGHT - 80;
+}
+
+function isFootCenterOverGap(footCenter, feetY) {
+  if (feetY > getGroundY() + 8) return false;
+  for (const gap of groundGaps) {
+    if (footCenter > gap.x + 4 && footCenter < gap.x + gap.width - 4) return true;
+  }
+  return false;
+}
+
+function updateLastSafePosition(p) {
+  if (!p.onGround || isFootCenterOverGap(p.x + p.width * 0.5, getPlayerFeetY(p))) return;
+  lastSafeX = p.x;
+  lastSafeY = p.y;
+}
+
+function respawnPlayerAtSafe(p) {
+  p.x = lastSafeX;
+  p.y = lastSafeY;
+  p.vx = 0;
+  p.vy = 0;
+  p.onGround = false;
+}
+
+function handlePitFall() {
+  takeDamage();
+  if (gameState !== 'playing' || !player) return;
+  respawnPlayerAtSafe(player);
 }
 
 function createMagicRecorder(x, y) {
@@ -1095,19 +1131,31 @@ function getPlayerFeetY(p) {
 function resolvePlatformCollision(p) {
   p.onGround = false;
   const prevFeet = getPlayerFeetY(p) - p.vy;
+  const footCenter = p.x + p.width * 0.5;
+  const footHalf = 20;
+  const footLeft = footCenter - footHalf;
+  const footRight = footCenter + footHalf;
 
   for (const plat of platforms) {
-    const overlapX = p.x + p.width > plat.x + 4 && p.x < plat.x + plat.width - 4;
+    const overlapX = plat.isGround
+      ? footRight > plat.x + 2 && footLeft < plat.x + plat.width - 2
+      : p.x + p.width > plat.x + 4 && p.x < plat.x + plat.width - 4;
     if (!overlapX || p.vy < 0) continue;
 
     const feet = getPlayerFeetY(p);
     const platTop = plat.y;
+    const landingDepth = plat.isGround ? 14 : plat.height + 8;
 
-    if (feet >= platTop && prevFeet <= platTop + plat.height + 8) {
+    if (feet >= platTop && prevFeet <= platTop + landingDepth) {
+      if (plat.isGround && isFootCenterOverGap(footCenter, platTop)) continue;
       p.y = platTop - p.height + PLAYER_FOOT_PADDING;
       p.vy = 0;
       p.onGround = true;
     }
+  }
+
+  if (p.onGround && isFootCenterOverGap(footCenter, getPlayerFeetY(p))) {
+    p.onGround = false;
   }
 }
 
@@ -1236,6 +1284,8 @@ function buildLevel(levelIndex) {
   player = createPlayer(80, groundY - PLAYER_HEIGHT + PLAYER_FOOT_PADDING);
   player.vx = 0;
   player.vy = 0;
+  lastSafeX = player.x;
+  lastSafeY = player.y;
   cameraX = 0;
   riddleInput = '';
   riddleHint = '';
@@ -1281,14 +1331,19 @@ function generateEnemyPositions(cfg) {
 }
 
 function buildGroundWithGaps(groundY, worldWidth, gapCount, gapWidthMult = 1) {
-  const gapWidth = (110 + (gapCount % 3) * 15) * gapWidthMult;
+  groundGaps.length = 0;
+  const gapWidth = Math.max(130, (110 + (gapCount % 3) * 15) * gapWidthMult);
   const segments = gapCount + 1;
   const totalGap = gapCount * gapWidth;
   const segmentWidth = (worldWidth - totalGap) / segments;
   let x = 0;
   for (let i = 0; i < segments; i++) {
-    platforms.push(createPlatform(x, groundY, segmentWidth, 80));
-    x += segmentWidth + gapWidth;
+    platforms.push(createPlatform(x, groundY, segmentWidth, 80, { isGround: true }));
+    x += segmentWidth;
+    if (i < segments - 1) {
+      groundGaps.push({ x, width: gapWidth });
+      x += gapWidth;
+    }
   }
 }
 
@@ -1536,15 +1591,20 @@ function updatePlaying(dt) {
   /* Platform collision — feet aligned to platform tops */
   resolvePlatformCollision(p);
 
+  /* Pit — fall through ground gaps (foot center must be over solid ground) */
+  const footCenter = p.x + p.width * 0.5;
+  const feetY = getPlayerFeetY(p);
+  if (isFootCenterOverGap(footCenter, feetY) && feetY > getGroundY() + 70) {
+    handlePitFall();
+  } else if (p.y > CANVAS_HEIGHT + 50) {
+    handlePitFall();
+  } else if (p.onGround) {
+    updateLastSafePosition(p);
+  }
+
   /* World bounds */
   if (p.x < 0) p.x = 0;
   if (p.x + p.width > level.worldWidth) p.x = level.worldWidth - p.width;
-  if (p.y > CANVAS_HEIGHT + 50) {
-    takeDamage();
-    p.x = Math.max(0, cameraX + 50);
-    p.y = CANVAS_HEIGHT - 200;
-    p.vy = 0;
-  }
 
   /* Camera follow */
   const targetCam = p.x - CANVAS_WIDTH * 0.35;
@@ -1700,7 +1760,6 @@ function loseLifeAndRestart() {
     return;
   }
 
-  score = 0;
   melodyStep = 0;
   currentLevel = 0;
   finaleRiddlesComplete = false;
@@ -1712,8 +1771,9 @@ function loseLifeAndRestart() {
   applyHearts();
   buildLevel(0);
   gameState = 'playing';
-  lifeLostFlashUntil = performance.now() + 2400;
+  lifeLostFlashUntil = performance.now() + 2800;
   if (isMobile()) touchControls.classList.remove('hidden');
+  resizeCanvas();
 }
 
 function updateParticles(dt) {
@@ -2423,17 +2483,20 @@ function drawLifeLostFlash() {
   ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-  drawOverlayPanel(CANVAS_WIDTH / 2 - 280, 250, 560, 180);
+  drawOverlayPanel(CANVAS_WIDTH / 2 - 280, 240, 560, 200);
   ctx.fillStyle = '#fff';
   applyHebrewTextStyle(30, true, 'center');
-  ctx.fillText(TEXT.lifeLostTitle, CANVAS_WIDTH / 2, 300);
+  ctx.fillText(TEXT.lifeLostTitle, CANVAS_WIDTH / 2, 292);
   applyHebrewTextStyle(20, false, 'center');
   ctx.fillStyle = '#ffe8ff';
-  ctx.fillText(TEXT.lifeLostLine, CANVAS_WIDTH / 2, 340);
+  ctx.fillText(TEXT.lifeLostLine, CANVAS_WIDTH / 2, 328);
+  applyHebrewTextStyle(18, true, 'center');
+  ctx.fillStyle = '#fff9c4';
+  ctx.fillText(TEXT.lifeLostScoreKept + ' ' + score, CANVAS_WIDTH / 2, 360);
   ctx.fillText(
     TEXT.lifeLostRemaining + ' ' + lives + ' ' + TEXT.lifeLostSuffix,
     CANVAS_WIDTH / 2,
-    375
+    392
   );
   resetTextStyle();
 }
