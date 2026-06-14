@@ -33,13 +33,19 @@ const JUMP_STRENGTH = -13.5;
 const MAX_FALL_SPEED = 14;
 const INVINCIBLE_TIME = 1800; /* ms */
 const WALK_ANIM_SPEED = 120; /* ms per frame */
+const MAX_HEARTS = 3;
+const MAX_LIVES = 3;
 
 /* Game state */
 let gameState = 'start'; /* start | playing | riddle | levelComplete | gameOver | finale */
 let currentLevel = 0;
 let score = 0;
-let hearts = 3;
-let maxHearts = 3;
+let hearts = MAX_HEARTS;
+let maxHearts = MAX_HEARTS;
+let lives = MAX_LIVES;
+let playerName = '';
+let lifeLostFlashUntil = 0;
+let leaderboardCache = [];
 let difficultyMode = 'easy';
 let muted = false;
 let bgm = null;
@@ -207,12 +213,21 @@ const TEXT = {
   hardMode: 'מצב קשה',
   score: 'ניקוד',
   notes: 'תווים',
+  lives: 'חיים',
+  enterName: 'שם המוזיקאית',
+  namePlaceholder: 'השם שלך…',
+  leaderboardTitle: '🏆 טבלת המובילים',
+  leaderboardEmpty: 'עדיין אין ניקוד — היו הראשונות!',
+  lifeLostTitle: 'איבדת את כל הלבבות!',
+  lifeLostLine: 'מתחילים שוב מההתחלה…',
+  lifeLostRemaining: 'נותרו',
+  lifeLostSuffix: 'חיים',
   riddlePrompt: 'הקלידי תשובה ולחצי שליחה',
   submit: 'שליחה',
   playRecorderHint: 'לחצי ♪ לנגינה בחליל!',
   playRecorderRiddleHint: 'עני על החידות כדי לפתוח את החליל!',
   cloudShhh: 'ששש',
-  gameOverTitle: 'אוי לא… השקט חזק מדי!',
+  gameOverTitle: 'אוי לא… נגמרו החיים!',
   gameOverLine1: 'אל דאגה — כל מוזיקאית גדולה',
   gameOverLine2: 'מתאמנת ומנסה שוב!',
   tryAgain: 'נסי שוב',
@@ -343,7 +358,6 @@ const DIFFICULTY = {
   easy: {
     label: 'קל',
     hudLabel: 'מצב קל',
-    maxHearts: 5,
     enemyCountMult: 0.6,
     enemySpeedMult: 0.72,
     gapCountOffset: -2,
@@ -359,7 +373,6 @@ const DIFFICULTY = {
   hard: {
     label: 'קשה',
     hudLabel: 'מצב קשה',
-    maxHearts: 2,
     enemyCountMult: 1.4,
     enemySpeedMult: 1.28,
     gapCountOffset: 2,
@@ -1137,6 +1150,7 @@ function updatePlaying(dt) {
         setTimeout(() => {
           gameState = 'finale';
           spawnConfetti(100);
+          submitScoreToLeaderboard(true);
         }, 2200);
       }
     } else if (!level.hasMagicRecorder) {
@@ -1345,9 +1359,33 @@ function takeDamage() {
   playHitSound();
 
   if (hearts <= 0) {
+    loseLifeAndRestart();
+  }
+}
+
+function loseLifeAndRestart() {
+  lives--;
+
+  if (lives <= 0) {
+    submitScoreToLeaderboard(false);
     gameState = 'gameOver';
     touchControls.classList.add('hidden');
+    syncStartPanel();
+    return;
   }
+
+  score = 0;
+  melodyStep = 0;
+  currentLevel = 0;
+  finaleRiddlesComplete = false;
+  levelRiddleTriggered = false;
+  exitRiddleState();
+  clearAllInput();
+  applyHearts();
+  buildLevel(0);
+  gameState = 'playing';
+  lifeLostFlashUntil = performance.now() + 2400;
+  if (isMobile()) touchControls.classList.remove('hidden');
 }
 
 function updateParticles(dt) {
@@ -1771,8 +1809,7 @@ function drawHUD() {
   ctx.fill();
 
   /* Hearts */
-  const heartSlots = maxHearts;
-  for (let i = 0; i < heartSlots; i++) {
+  for (let i = 0; i < MAX_HEARTS; i++) {
     const hx = 32 + i * 36;
     const hy = 24;
     const heartImg = getImage('heart');
@@ -1786,6 +1823,11 @@ function drawHUD() {
       drawHeartPlaceholder(hx + 14, hy + 14, i < hearts);
     }
   }
+
+  /* Lives */
+  applyHebrewTextStyle(18, true, 'right');
+  ctx.fillStyle = '#5a3080';
+  ctx.fillText(TEXT.lives + ': ' + lives + ' / ' + MAX_LIVES, 168, 42);
 
   /* Score */
   ctx.fillStyle = '#5a3080';
@@ -1891,10 +1933,9 @@ function handleButton(id) {
     tryStartBackgroundMusic();
     startGame();
   } else if (id === 'retry') {
-    restartLevel();
+    startGame();
   } else if (id === 'playAgain') {
     resetGame();
-    startGame();
   } else if (id === 'home') {
     goHome();
   }
@@ -1951,19 +1992,68 @@ function drawStartScreen() {
     drawCharacterPlaceholder(heroX, heroY, heroW, heroH, 1);
   }
 
-  drawOverlayPanel(CANVAS_WIDTH / 2 - 340, 552, 680, 72);
+  drawOverlayPanel(CANVAS_WIDTH / 2 - 340, 520, 680, 72);
   ctx.fillStyle = '#fff';
   applyHebrewTextStyle(18, false, 'center');
-  ctx.fillText(TEXT.instructions1, CANVAS_WIDTH / 2, 586);
-  ctx.fillText(TEXT.instructions2, CANVAS_WIDTH / 2, 612);
+  ctx.fillText(TEXT.instructions1, CANVAS_WIDTH / 2, 554);
+  ctx.fillText(TEXT.instructions2, CANVAS_WIDTH / 2, 580);
 
   ctx.fillStyle = '#ffe8ff';
   applyHebrewTextStyle(20, true, 'center');
-  ctx.fillText(TEXT.chooseDifficulty, CANVAS_WIDTH / 2, 644);
+  ctx.fillText(TEXT.chooseDifficulty, CANVAS_WIDTH / 2, 612);
 
-  drawButton(CANVAS_WIDTH / 2 - 320, 658, 300, 48, TEXT.easyMode, 'startEasy');
-  drawButton(CANVAS_WIDTH / 2 + 20, 658, 300, 48, TEXT.hardMode, 'startHard');
+  drawButton(CANVAS_WIDTH / 2 - 320, 618, 300, 48, TEXT.easyMode, 'startEasy');
+  drawButton(CANVAS_WIDTH / 2 + 20, 618, 300, 48, TEXT.hardMode, 'startHard');
 
+  resetTextStyle();
+  syncStartPanel();
+}
+
+function drawLifeLostFlash() {
+  if (!lifeLostFlashUntil || performance.now() > lifeLostFlashUntil) return;
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  drawOverlayPanel(CANVAS_WIDTH / 2 - 280, 250, 560, 180);
+  ctx.fillStyle = '#fff';
+  applyHebrewTextStyle(30, true, 'center');
+  ctx.fillText(TEXT.lifeLostTitle, CANVAS_WIDTH / 2, 300);
+  applyHebrewTextStyle(20, false, 'center');
+  ctx.fillStyle = '#ffe8ff';
+  ctx.fillText(TEXT.lifeLostLine, CANVAS_WIDTH / 2, 340);
+  ctx.fillText(
+    TEXT.lifeLostRemaining + ' ' + lives + ' ' + TEXT.lifeLostSuffix,
+    CANVAS_WIDTH / 2,
+    375
+  );
+  resetTextStyle();
+}
+
+function drawLeaderboardPanel(x, y, w, h) {
+  drawOverlayPanel(x, y, w, h);
+  ctx.fillStyle = '#ffd700';
+  applyHebrewTextStyle(20, true, 'center');
+  ctx.fillText(TEXT.leaderboardTitle, x + w / 2, y + 34);
+  ctx.fillStyle = '#fff';
+  applyHebrewTextStyle(16, false, 'right');
+
+  if (!leaderboardCache.length) {
+    ctx.fillText(TEXT.leaderboardEmpty, x + w / 2, y + 72);
+    resetTextStyle();
+    return;
+  }
+
+  let ly = y + 62;
+  const maxRows = Math.min(leaderboardCache.length, 6);
+  for (let i = 0; i < maxRows; i++) {
+    const row = leaderboardCache[i];
+    const mode = row.difficulty === 'hard' ? 'קשה' : 'קל';
+    const done = row.completed ? ' ✨' : '';
+    const line = (i + 1) + '. ' + row.player_name + ' — ' + row.score + ' (' + mode + ')' + done;
+    ctx.fillText(line, x + w - 20, ly);
+    ly += 26;
+  }
   resetTextStyle();
 }
 
@@ -1979,7 +2069,7 @@ function drawGameOverScreen() {
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
   uiButtons = [];
-  drawOverlayPanel(CANVAS_WIDTH / 2 - 300, 120, 600, 480);
+  drawOverlayPanel(CANVAS_WIDTH / 2 - 300, 100, 600, 580);
 
   ctx.fillStyle = '#fff';
   applyHebrewTextStyle(34, true, 'center');
@@ -1990,17 +2080,23 @@ function drawGameOverScreen() {
   ctx.fillText(TEXT.gameOverLine1, CANVAS_WIDTH / 2, 220);
   ctx.fillText(TEXT.gameOverLine2, CANVAS_WIDTH / 2, 252);
 
+  applyHebrewTextStyle(18, false, 'center');
+  ctx.fillStyle = '#fff9c4';
+  ctx.fillText(TEXT.score + ': ' + score, CANVAS_WIDTH / 2, 290);
+
   const sadImg = getImage('girl_surprised') || getImage('girl_idle');
   const heroW = 150;
   const heroH = 225;
   if (sadImg) {
-    ctx.drawImage(sadImg, CANVAS_WIDTH / 2 - heroW / 2, 275, heroW, heroH);
+    ctx.drawImage(sadImg, CANVAS_WIDTH / 2 - heroW / 2, 305, heroW, heroH);
   } else {
-    drawCharacterPlaceholder(CANVAS_WIDTH / 2 - heroW / 2, 275, heroW, heroH, 1);
+    drawCharacterPlaceholder(CANVAS_WIDTH / 2 - heroW / 2, 305, heroW, heroH, 1);
   }
 
-  drawButton(CANVAS_WIDTH / 2 - 220, 530, 200, 52, TEXT.tryAgain, 'retry');
-  drawButton(CANVAS_WIDTH / 2 + 20, 530, 200, 52, TEXT.homeButton, 'home');
+  drawLeaderboardPanel(CANVAS_WIDTH / 2 - 250, 430, 500, 200);
+
+  drawButton(CANVAS_WIDTH / 2 - 220, 650, 200, 52, TEXT.tryAgain, 'retry');
+  drawButton(CANVAS_WIDTH / 2 + 20, 650, 200, 52, TEXT.homeButton, 'home');
   resetTextStyle();
 }
 
@@ -2026,11 +2122,15 @@ function drawFinaleScreen() {
     ly += line === '' ? 16 : 32;
   }
 
+  applyHebrewTextStyle(20, true, 'center');
+  ctx.fillStyle = '#fff9c4';
+  ctx.fillText(TEXT.score + ': ' + score, CANVAS_WIDTH / 2, ly + 10);
+
   const happyImg = getImage('girl_happy');
   if (happyImg) {
-    ctx.drawImage(happyImg, CANVAS_WIDTH / 2 - 55, 385, 110, 165);
+    ctx.drawImage(happyImg, CANVAS_WIDTH / 2 - 55, 400, 110, 165);
   } else {
-    drawCharacterPlaceholder(CANVAS_WIDTH / 2 - 50, 400, 100, 120, 1);
+    drawCharacterPlaceholder(CANVAS_WIDTH / 2 - 50, 415, 100, 120, 1);
   }
 
   drawButton(CANVAS_WIDTH / 2 - 220, 540, 200, 50, TEXT.playAgain, 'playAgain');
@@ -2285,38 +2385,112 @@ function playFinalArpeggio() {
    10. RESTART / RESET
    ========================================================================== */
 
-function applyDifficultyHearts() {
-  maxHearts = getDifficulty().maxHearts;
-  hearts = maxHearts;
+function applyHearts() {
+  maxHearts = MAX_HEARTS;
+  hearts = MAX_HEARTS;
+}
+
+function getPlayerName() {
+  const el = document.getElementById('player-name-input');
+  const name = el ? el.value.trim() : playerName;
+  return name || 'אמה';
+}
+
+function syncStartPanel() {
+  const panel = document.getElementById('start-panel');
+  if (!panel) return;
+  const show = gameState === 'start';
+  panel.classList.toggle('hidden', !show);
+  panel.setAttribute('aria-hidden', show ? 'false' : 'true');
+}
+
+function renderLeaderboardHtml() {
+  const list = document.getElementById('leaderboard-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (!leaderboardCache.length) {
+    const li = document.createElement('li');
+    li.className = 'leaderboard-empty';
+    li.textContent = TEXT.leaderboardEmpty;
+    list.appendChild(li);
+    return;
+  }
+
+  leaderboardCache.slice(0, 8).forEach((row, i) => {
+    const li = document.createElement('li');
+    const mode = row.difficulty === 'hard' ? 'קשה' : 'קל';
+    const done = row.completed ? ' ✨' : '';
+    li.textContent = (i + 1) + '. ' + row.player_name + ' — ' + row.score + ' (' + mode + ')' + done;
+    list.appendChild(li);
+  });
+}
+
+async function loadLeaderboard() {
+  try {
+    const res = await fetch('/api/scores?limit=8');
+    if (!res.ok) return;
+    const data = await res.json();
+    leaderboardCache = data.scores || [];
+    renderLeaderboardHtml();
+  } catch (err) {
+    /* leaderboard optional */
+  }
+}
+
+async function submitScoreToLeaderboard(completed) {
+  if (score <= 0) return;
+
+  try {
+    await fetch('/api/scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        playerName: getPlayerName(),
+        score,
+        difficulty: difficultyMode,
+        completed
+      })
+    });
+    await loadLeaderboard();
+  } catch (err) {
+    /* saving score is optional */
+  }
 }
 
 function startGame() {
+  playerName = getPlayerName();
   score = 0;
-  applyDifficultyHearts();
+  lives = MAX_LIVES;
+  applyHearts();
   melodyStep = 0;
+  lifeLostFlashUntil = 0;
   finaleRiddlesComplete = false;
   levelRiddleTriggered = false;
   buildLevel(0);
   gameState = 'playing';
+  syncStartPanel();
   touchControls.classList.remove('hidden');
   if (isMobile()) touchControls.classList.remove('hidden');
   resizeCanvas();
 }
 
 function restartLevel() {
-  applyDifficultyHearts();
+  applyHearts();
   buildLevel(currentLevel);
   gameState = 'playing';
+  syncStartPanel();
   if (isMobile()) touchControls.classList.remove('hidden');
   resizeCanvas();
 }
 
 function resetGame() {
   score = 0;
-  maxHearts = 3;
-  hearts = 3;
+  lives = MAX_LIVES;
+  applyHearts();
   currentLevel = 0;
   melodyStep = 0;
+  lifeLostFlashUntil = 0;
   finaleRiddlesComplete = false;
   levelRiddleTriggered = false;
   activeRiddleKey = null;
@@ -2328,13 +2502,19 @@ function resetGame() {
   jumpHeld = false;
   exitRiddleState();
   gameState = 'start';
+  syncStartPanel();
   touchControls.classList.add('hidden');
   player = null;
   level = null;
+  loadLeaderboard();
 }
 
 function goHome() {
   resetGame();
+}
+
+function applyDifficultyHearts() {
+  applyHearts();
 }
 
 /* ==========================================================================
@@ -2364,6 +2544,7 @@ function render() {
     case 'playing':
       drawGameWorld();
       drawHUD();
+      drawLifeLostFlash();
       break;
     case 'riddle':
       drawRiddleModal();
@@ -2405,6 +2586,8 @@ async function init() {
   canvas.setAttribute('tabindex', '0');
 
   gameState = 'start';
+  syncStartPanel();
+  loadLeaderboard();
   requestAnimationFrame(gameLoop);
 }
 

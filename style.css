@@ -44,6 +44,92 @@ html, body {
   max-height: calc(100vh - 130px);
 }
 
+/* ---- Start panel (name + leaderboard) ---- */
+#start-panel {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  width: min(620px, calc(100% - 16px));
+  max-height: 210px;
+  overflow-y: auto;
+  padding: 14px 18px 12px;
+  border-radius: 18px;
+  background: rgba(45, 27, 78, 0.94);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  direction: rtl;
+  text-align: right;
+  font-family: Arial, "Noto Sans Hebrew", sans-serif;
+  z-index: 12;
+  pointer-events: auto;
+}
+
+#start-panel.hidden {
+  display: none;
+}
+
+#start-panel label {
+  display: block;
+  color: #ffe8ff;
+  font-size: 15px;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+#player-name-input {
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  margin-bottom: 10px;
+  border: 2px solid #fff;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.97);
+  color: #333;
+  font-size: 18px;
+  font-family: Arial, "Noto Sans Hebrew", sans-serif;
+  direction: rtl;
+  text-align: right;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+#player-name-input:focus {
+  border-color: #ffd700;
+}
+
+#leaderboard-panel {
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  padding-top: 8px;
+}
+
+#leaderboard-title {
+  color: #ffd700;
+  font-size: 15px;
+  margin-bottom: 6px;
+  text-align: center;
+}
+
+#leaderboard-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+#leaderboard-list li {
+  padding: 2px 0;
+}
+
+#leaderboard-list .leaderboard-empty {
+  color: #ffb8d0;
+  text-align: center;
+  font-style: italic;
+}
+
 /* ---- Riddle modal ---- */
 #riddle-overlay {
   position: absolute;

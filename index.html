@@ -11,6 +11,15 @@
     <div id="game-stage">
       <canvas id="game-canvas" width="1280" height="720"></canvas>
 
+      <div id="start-panel" class="hidden" aria-hidden="true">
+        <label for="player-name-input">שם המוזיקאית</label>
+        <input type="text" id="player-name-input" dir="rtl" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="20" placeholder="השם שלך…">
+        <div id="leaderboard-panel">
+          <h3 id="leaderboard-title">🏆 טבלת המובילים</h3>
+          <ol id="leaderboard-list"></ol>
+        </div>
+      </div>
+
       <div id="riddle-overlay" class="hidden" aria-hidden="true">
         <div id="riddle-panel">
           <h2 id="riddle-title">✨ חידה מוזיקלית ✨</h2>
