@@ -33,6 +33,7 @@ const JUMP_STRENGTH = -13.5;
 const MAX_FALL_SPEED = 14;
 const INVINCIBLE_TIME = 1800; /* ms */
 const WALK_ANIM_SPEED = 120; /* ms per frame */
+const COYOTE_TIME_MS = 140; /* grace period to jump after leaving a ledge */
 const MAX_HEARTS = 3;
 const MAX_LIVES = 3;
 const PLAYER_NAME_STORAGE_KEY = 'emmasgame_player_name';
@@ -822,7 +823,8 @@ function imageLoaded(key) {
    ========================================================================== */
 
 const keys = {};
-const touchInput = { left: false, right: false, jump: false, play: false };
+const touchInput = { left: false, right: false, jump: false };
+const MOBILE_TOUCH_BAR_HEIGHT = 54;
 
 document.addEventListener('keydown', (e) => {
   if (gameState === 'playing') {
@@ -881,9 +883,8 @@ function clearAllInput() {
   touchInput.left = false;
   touchInput.right = false;
   touchInput.jump = false;
-  touchInput.play = false;
   jumpHeld = false;
-  ['btn-left', 'btn-right', 'btn-jump', 'btn-play'].forEach((id) => {
+  ['btn-left', 'btn-right', 'btn-jump'].forEach((id) => {
     document.getElementById(id)?.classList.remove('active');
   });
 }
@@ -968,7 +969,6 @@ function setupTouchControls() {
   bind('btn-left', 'left');
   bind('btn-right', 'right');
   bind('btn-jump', 'jump');
-  bind('btn-play', 'play');
 }
 
 function inputLeft() {
@@ -984,7 +984,7 @@ function inputJump() {
 }
 
 function inputPlay() {
-  return keys['KeyE'] || touchInput.play;
+  return keys['KeyE'];
 }
 
 function getCanvasMousePos(e) {
@@ -1045,6 +1045,7 @@ function createPlayer(x, y) {
     facing: 1,
     walkFrame: 0,
     walkTimer: 0,
+    coyoteMs: 0,
     playingRecorder: false,
     playTimer: 0,
     invincibleUntil: 0,
@@ -1126,6 +1127,62 @@ function isFootCenterOverGap(footCenter, feetY) {
   return false;
 }
 
+function getPlayerFootSpan(p) {
+  const footCenter = p.x + p.width * 0.5;
+  const footHalf = 20;
+  return {
+    center: footCenter,
+    left: footCenter - footHalf,
+    right: footCenter + footHalf
+  };
+}
+
+function platformOverlapX(p, plat, footLeft, footRight) {
+  return plat.isGround
+    ? footRight > plat.x + 2 && footLeft < plat.x + plat.width - 2
+    : p.x + p.width > plat.x + 4 && p.x < plat.x + plat.width - 4;
+}
+
+function snapPlayerToPlatformTop(p, platTop) {
+  p.y = platTop - p.height + PLAYER_FOOT_PADDING;
+  p.vy = 0;
+  p.onGround = true;
+}
+
+function resolvePlatformCollision(p) {
+  p.onGround = false;
+  const prevFeet = getPlayerFeetY(p) - p.vy;
+  const { center: footCenter, left: footLeft, right: footRight } = getPlayerFootSpan(p);
+  let supportTop = null;
+
+  for (const plat of platforms) {
+    if (!platformOverlapX(p, plat, footLeft, footRight)) continue;
+
+    const feet = getPlayerFeetY(p);
+    const platTop = plat.y;
+    const landingDepth = plat.isGround ? 14 : plat.height + 8;
+
+    if (p.vy < 0) continue;
+
+    if (feet >= platTop && prevFeet <= platTop + landingDepth) {
+      if (plat.isGround && isFootCenterOverGap(footCenter, platTop)) continue;
+      snapPlayerToPlatformTop(p, platTop);
+      supportTop = platTop;
+    } else if (p.vy >= 0 && feet >= platTop - 3 && feet <= platTop + 12) {
+      if (plat.isGround && isFootCenterOverGap(footCenter, platTop)) continue;
+      if (supportTop === null || platTop < supportTop) supportTop = platTop;
+    }
+  }
+
+  if (!p.onGround && supportTop !== null) {
+    snapPlayerToPlatformTop(p, supportTop);
+  }
+
+  if (p.onGround && isFootCenterOverGap(footCenter, getPlayerFeetY(p))) {
+    p.onGround = false;
+  }
+}
+
 function updateLastSafePosition(p) {
   if (!p.onGround || isFootCenterOverGap(p.x + p.width * 0.5, getPlayerFeetY(p))) return;
   lastSafeX = p.x;
@@ -1138,6 +1195,7 @@ function respawnPlayerAtSafe(p) {
   p.vx = 0;
   p.vy = 0;
   p.onGround = false;
+  p.coyoteMs = 0;
 }
 
 function handlePitFall() {
@@ -1152,37 +1210,6 @@ function createMagicRecorder(x, y) {
 
 function getPlayerFeetY(p) {
   return p.y + p.height - PLAYER_FOOT_PADDING;
-}
-
-function resolvePlatformCollision(p) {
-  p.onGround = false;
-  const prevFeet = getPlayerFeetY(p) - p.vy;
-  const footCenter = p.x + p.width * 0.5;
-  const footHalf = 20;
-  const footLeft = footCenter - footHalf;
-  const footRight = footCenter + footHalf;
-
-  for (const plat of platforms) {
-    const overlapX = plat.isGround
-      ? footRight > plat.x + 2 && footLeft < plat.x + plat.width - 2
-      : p.x + p.width > plat.x + 4 && p.x < plat.x + plat.width - 4;
-    if (!overlapX || p.vy < 0) continue;
-
-    const feet = getPlayerFeetY(p);
-    const platTop = plat.y;
-    const landingDepth = plat.isGround ? 14 : plat.height + 8;
-
-    if (feet >= platTop && prevFeet <= platTop + landingDepth) {
-      if (plat.isGround && isFootCenterOverGap(footCenter, platTop)) continue;
-      p.y = platTop - p.height + PLAYER_FOOT_PADDING;
-      p.vy = 0;
-      p.onGround = true;
-    }
-  }
-
-  if (p.onGround && isFootCenterOverGap(footCenter, getPlayerFeetY(p))) {
-    p.onGround = false;
-  }
 }
 
 function rectsOverlap(a, b) {
@@ -1591,9 +1618,11 @@ function updatePlaying(dt) {
 
     /* Jump (one press per landing) */
     const jumpNow = inputJump();
-    if (jumpNow && !jumpHeld && p.onGround) {
+    const canJump = p.onGround || p.coyoteMs > 0;
+    if (jumpNow && !jumpHeld && canJump) {
       p.vy = JUMP_STRENGTH;
       p.onGround = false;
+      p.coyoteMs = 0;
     }
     jumpHeld = jumpNow;
   } else {
@@ -1607,7 +1636,16 @@ function updatePlaying(dt) {
   p.x += p.vx;
   p.y += p.vy;
 
-  /* Walk animation */
+  /* Platform collision — feet aligned to platform tops */
+  resolvePlatformCollision(p);
+
+  if (p.onGround) {
+    p.coyoteMs = COYOTE_TIME_MS;
+  } else {
+    p.coyoteMs = Math.max(0, p.coyoteMs - dt);
+  }
+
+  /* Walk animation (after collision so onGround is current) */
   if (Math.abs(p.vx) > 0.5 && p.onGround && !p.playingRecorder) {
     p.walkTimer += dt;
     if (p.walkTimer >= WALK_ANIM_SPEED) {
@@ -1618,9 +1656,6 @@ function updatePlaying(dt) {
     p.walkFrame = 0;
     p.walkTimer = 0;
   }
-
-  /* Platform collision — feet aligned to platform tops */
-  resolvePlatformCollision(p);
 
   /* Pit — fall through ground gaps (foot center must be over solid ground) */
   const footCenter = p.x + p.width * 0.5;
@@ -3250,8 +3285,9 @@ function resizeCanvas() {
   let wh;
   if (mobilePlay) {
     const vv = window.visualViewport;
+    const controlsExtra = shouldShowTouchControls() ? MOBILE_TOUCH_BAR_HEIGHT : 0;
     ww = stage ? stage.clientWidth : (vv ? vv.width : wrapper.clientWidth);
-    wh = stage ? stage.clientHeight : (vv ? vv.height : wrapper.clientHeight);
+    wh = (stage ? stage.clientHeight : (vv ? vv.height : wrapper.clientHeight)) - controlsExtra;
   } else {
     ww = wrapper.clientWidth - 16;
     wh = wrapper.clientHeight - 24 - startPanelExtra;
@@ -3265,6 +3301,10 @@ function resizeCanvas() {
   if (viewport) {
     viewport.style.width = displayW + 'px';
     viewport.style.height = displayH + 'px';
+  }
+
+  if (touchControls && mobilePlay) {
+    touchControls.style.width = displayW + 'px';
   }
 
   canvas.style.position = '';
