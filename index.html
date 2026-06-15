@@ -22,18 +22,6 @@
             <p class="rotate-hint-sub">המשחק נראה הכי טוב במצב אופקי</p>
           </div>
         </div>
-
-        <div id="riddle-overlay" class="hidden" aria-hidden="true">
-          <div id="riddle-panel">
-            <h2 id="riddle-title">✨ חידה מוזיקלית ✨</h2>
-            <p id="riddle-question"></p>
-            <p id="riddle-prompt">הקלידי תשובה ולחצי שליחה</p>
-            <input type="text" id="riddle-input" dir="rtl" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="40" placeholder="התשובה שלך…">
-            <button type="button" id="riddle-submit-btn">שליחה</button>
-            <p id="riddle-feedback-text" aria-live="polite"></p>
-            <p id="riddle-hint-text" aria-live="polite"></p>
-          </div>
-        </div>
       </div>
 
       <div id="touch-controls" class="hidden">
@@ -44,6 +32,18 @@
         <div class="touch-pad touch-pad-right">
           <button type="button" id="btn-jump" class="touch-btn" aria-label="קפיצה">▲</button>
         </div>
+      </div>
+    </div>
+
+    <div id="riddle-overlay" class="hidden" aria-hidden="true">
+      <div id="riddle-panel">
+        <h2 id="riddle-title">✨ חידה מוזיקלית ✨</h2>
+        <p id="riddle-question"></p>
+        <p id="riddle-prompt">הקלידי תשובה ולחצי שליחה</p>
+        <input type="text" id="riddle-input" dir="rtl" inputmode="text" enterkeyhint="done" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="40" placeholder="התשובה שלך…">
+        <button type="button" id="riddle-submit-btn">שליחה</button>
+        <p id="riddle-feedback-text" aria-live="polite"></p>
+        <p id="riddle-hint-text" aria-live="polite"></p>
       </div>
     </div>
 

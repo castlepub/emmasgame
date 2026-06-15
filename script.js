@@ -283,6 +283,7 @@ const TEXT = {
   lifeLostRemaining: 'נותרו',
   lifeLostSuffix: 'חיים',
   riddlePrompt: 'הקלידי תשובה ולחצי שליחה',
+  riddlePromptMobile: 'קראי את החידה, ואז לחצי על השדה כדי להקליד',
   submit: 'שליחה',
   playRecorderHint: 'לחצי ♪ לנגינה בחליל!',
   playRecorderRiddleHint: 'עני על החידות בסוף השלב כדי לפתוח את החליל!',
@@ -875,6 +876,14 @@ if (riddleInputEl) {
       submitRiddle();
     }
   });
+  riddleInputEl.addEventListener('focus', () => {
+    if (gameState !== 'riddle') return;
+    setTimeout(syncRiddleLayout, 80);
+    setTimeout(syncRiddleLayout, 320);
+  });
+  riddleInputEl.addEventListener('blur', () => {
+    if (gameState === 'riddle') setTimeout(syncRiddleLayout, 80);
+  });
 }
 
 const riddleSubmitBtn = document.getElementById('riddle-submit-btn');
@@ -933,18 +942,54 @@ function syncLayoutMode() {
   const portrait = isPortraitViewport();
 
   if (wrapper) {
-    wrapper.classList.toggle('play-mode', playLayout && mobile);
+    wrapper.classList.toggle('play-mode', playLayout && mobile && gameState !== 'riddle');
+    wrapper.classList.toggle('riddle-mode', gameState === 'riddle');
     wrapper.classList.toggle('mobile-layout', mobile);
-    wrapper.classList.toggle('portrait-mobile', mobile && playLayout && portrait);
+    wrapper.classList.toggle('portrait-mobile', mobile && playLayout && portrait && gameState !== 'riddle');
   }
 
   if (rotateHint) {
-    const showRotate = mobile && playLayout && portrait;
+    const showRotate = mobile && playLayout && portrait && gameState !== 'riddle';
     rotateHint.classList.toggle('hidden', !showRotate);
     rotateHint.setAttribute('aria-hidden', showRotate ? 'false' : 'true');
   }
 
   syncTouchControls();
+  syncRiddleLayout();
+}
+
+function resetRiddleLayoutStyles() {
+  const overlay = document.getElementById('riddle-overlay');
+  const panel = document.getElementById('riddle-panel');
+  if (overlay) {
+    overlay.style.top = '';
+    overlay.style.left = '';
+    overlay.style.width = '';
+    overlay.style.height = '';
+  }
+  if (panel) panel.style.maxHeight = '';
+}
+
+function syncRiddleLayout() {
+  const overlay = document.getElementById('riddle-overlay');
+  const panel = document.getElementById('riddle-panel');
+  if (!overlay || overlay.classList.contains('hidden') || gameState !== 'riddle') {
+    resetRiddleLayoutStyles();
+    return;
+  }
+
+  const vv = window.visualViewport;
+  if (!vv) return;
+
+  overlay.style.top = vv.offsetTop + 'px';
+  overlay.style.left = vv.offsetLeft + 'px';
+  overlay.style.width = vv.width + 'px';
+  overlay.style.height = vv.height + 'px';
+
+  if (panel) {
+    const inset = 20;
+    panel.style.maxHeight = Math.max(140, vv.height - inset) + 'px';
+  }
 }
 
 function shouldShowTouchControls() {
@@ -2844,8 +2889,13 @@ function enterRiddleState(riddleKey) {
   }
 
   const promptEl = document.getElementById('riddle-prompt');
-  if (promptEl) promptEl.textContent = TEXT.riddlePrompt;
+  if (promptEl) {
+    promptEl.textContent = isMobile() ? TEXT.riddlePromptMobile : TEXT.riddlePrompt;
+  }
 
+  tryMobileFullscreen();
+  syncLayoutMode();
+  syncRiddleLayout();
   showRiddleInput();
   updateRiddlePanel();
 }
@@ -2872,12 +2922,16 @@ function exitRiddleState() {
     overlay.classList.add('hidden');
     overlay.setAttribute('aria-hidden', 'true');
   }
+  resetRiddleLayoutStyles();
+  syncLayoutMode();
   if (isMobile()) touchControls.classList.remove('hidden');
 }
 
 function showRiddleInput() {
   if (!riddleInputEl) return;
   riddleInputEl.value = riddleInput;
+  syncRiddleLayout();
+  if (isMobile()) return;
   requestAnimationFrame(() => {
     riddleInputEl.focus({ preventScroll: true });
   });
@@ -3509,7 +3563,11 @@ async function init() {
     setTimeout(resizeCanvas, 120);
   });
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', resizeCanvas);
+    window.visualViewport.addEventListener('resize', () => {
+      resizeCanvas();
+      syncRiddleLayout();
+    });
+    window.visualViewport.addEventListener('scroll', syncRiddleLayout);
   }
 
   await loadAllAssets();
