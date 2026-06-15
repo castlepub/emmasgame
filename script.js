@@ -203,6 +203,17 @@ const ASSET_PATHS = {
     '../assets/backgrounds/finale_background.png',
     '../assets/backgrounds/magical_garden_celebration_with_balloons.png'
   ],
+  end_game_photo: [
+    'assets/backgrounds/end_game_photo.png',
+    'assets/backgrounds/end_game_photo.jpg',
+    'assets/backgrounds/end_game_photo.jpeg',
+    'assets/end_game_photo.png',
+    'assets/end_game_photo.jpg',
+    '../assets/backgrounds/end_game_photo.png',
+    '../assets/backgrounds/end_game_photo.jpg',
+    '../assets/backgrounds/end_game_photo.jpeg',
+    '../assets/end_game_photo.png'
+  ],
   story_1: [
     'assets/story/story 1.png',
     'assets/story/Story 1.png',
@@ -827,7 +838,7 @@ const touchInput = { left: false, right: false, jump: false };
 const MOBILE_TOUCH_BAR_HEIGHT = 54;
 
 document.addEventListener('keydown', (e) => {
-  if (gameState === 'playing') {
+  if (gameState === 'playing' || gameState === 'finale') {
     keys[e.code] = true;
   }
   if (gameState === 'story') {
@@ -842,7 +853,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
-    if (gameState === 'playing') e.preventDefault();
+    if (gameState === 'playing' || gameState === 'finale') e.preventDefault();
   }
   if (gameState === 'riddle' && e.code === 'Enter') {
     e.preventDefault();
@@ -937,7 +948,7 @@ function syncLayoutMode() {
 }
 
 function shouldShowTouchControls() {
-  return isMobile() && (gameState === 'playing' || gameState === 'levelFade');
+  return isMobile() && (gameState === 'playing' || gameState === 'levelFade' || gameState === 'finale');
 }
 
 function syncTouchControls() {
@@ -1572,6 +1583,124 @@ function isMobilePortraitPlayBlocked() {
   return isMobile() && usesPlayLayout() && isPortraitViewport();
 }
 
+function enterFinaleCelebration() {
+  gameState = 'finale';
+  cameraX = 0;
+  groundGaps.length = 0;
+  platforms = [createPlatform(0, getGroundY(), CANVAS_WIDTH, 80, { isGround: true })];
+  enemies = [];
+  boss = null;
+  projectiles = [];
+  notes = [];
+  goldenNotes = [];
+  magicRecorder = null;
+  level = {
+    name: 'celebration',
+    worldWidth: CANVAS_WIDTH,
+    bgKey: 'end_game_photo'
+  };
+
+  if (player) {
+    player.x = Math.min(Math.max(player.x, 40), CANVAS_WIDTH - player.width - 40);
+    player.y = getGroundY() - PLAYER_HEIGHT + PLAYER_FOOT_PADDING;
+    player.vx = 0;
+    player.vy = 0;
+    player.onGround = true;
+    player.coyoteMs = COYOTE_TIME_MS;
+    player.playingRecorder = false;
+    player.playTimer = 0;
+    player.walkFrame = 0;
+    player.walkTimer = 0;
+  } else {
+    player = createPlayer(
+      CANVAS_WIDTH / 2 - PLAYER_WIDTH / 2,
+      getGroundY() - PLAYER_HEIGHT + PLAYER_FOOT_PADDING
+    );
+    player.onGround = true;
+    player.coyoteMs = COYOTE_TIME_MS;
+  }
+
+  clearAllInput();
+  spawnConfetti(120);
+  submitScoreToLeaderboard(true);
+  syncLayoutMode();
+  syncTouchControls();
+  resizeCanvas();
+}
+
+function updatePlayerLocomotion(dt) {
+  const p = player;
+  if (!p) return;
+
+  if (inputLeft()) {
+    p.vx = -PLAYER_SPEED;
+    p.facing = -1;
+  } else if (inputRight()) {
+    p.vx = PLAYER_SPEED;
+    p.facing = 1;
+  } else {
+    p.vx = 0;
+  }
+
+  const jumpNow = inputJump();
+  const canJump = p.onGround || p.coyoteMs > 0;
+  if (jumpNow && !jumpHeld && canJump) {
+    p.vy = JUMP_STRENGTH;
+    p.onGround = false;
+    p.coyoteMs = 0;
+  }
+  jumpHeld = jumpNow;
+
+  p.vy += GRAVITY;
+  if (p.vy > MAX_FALL_SPEED) p.vy = MAX_FALL_SPEED;
+
+  p.x += p.vx;
+  p.y += p.vy;
+
+  resolvePlatformCollision(p);
+
+  if (p.onGround) {
+    p.coyoteMs = COYOTE_TIME_MS;
+  } else {
+    p.coyoteMs = Math.max(0, p.coyoteMs - dt);
+  }
+
+  if (Math.abs(p.vx) > 0.5 && p.onGround) {
+    p.walkTimer += dt;
+    if (p.walkTimer >= WALK_ANIM_SPEED) {
+      p.walkTimer = 0;
+      p.walkFrame = 1 - p.walkFrame;
+    }
+  } else {
+    p.walkFrame = 0;
+    p.walkTimer = 0;
+  }
+}
+
+function updateFinale(dt) {
+  if (!player) return;
+  if (isMobilePortraitPlayBlocked()) return;
+
+  updatePlayerLocomotion(dt);
+
+  if (player.x < 0) player.x = 0;
+  if (player.x + player.width > CANVAS_WIDTH) {
+    player.x = CANVAS_WIDTH - player.width;
+  }
+
+  if (player.y > CANVAS_HEIGHT + 40) {
+    player.x = CANVAS_WIDTH / 2 - player.width / 2;
+    player.y = getGroundY() - PLAYER_HEIGHT + PLAYER_FOOT_PADDING;
+    player.vx = 0;
+    player.vy = 0;
+    player.onGround = true;
+    player.coyoteMs = COYOTE_TIME_MS;
+  }
+
+  updateConfetti(dt);
+  updateBgNotes(dt);
+}
+
 function updatePlaying(dt) {
   if (!player || !level) return;
   if (isMobilePortraitPlayBlocked()) return;
@@ -1589,12 +1718,7 @@ function updatePlaying(dt) {
         p.playTimer = 2500;
         playFinalArpeggio();
         setTimeout(() => {
-          gameState = 'finale';
-          touchControls.classList.add('hidden');
-          spawnConfetti(100);
-          submitScoreToLeaderboard(true);
-          syncLayoutMode();
-          resizeCanvas();
+          enterFinaleCelebration();
         }, 2200);
       }
     } else if (!level.hasMagicRecorder) {
@@ -1611,53 +1735,19 @@ function updatePlaying(dt) {
 
   /* Horizontal movement */
   if (!p.playingRecorder) {
-    if (inputLeft()) {
-      p.vx = -PLAYER_SPEED;
-      p.facing = -1;
-    } else if (inputRight()) {
-      p.vx = PLAYER_SPEED;
-      p.facing = 1;
-    } else {
-      p.vx = 0;
-    }
-
-    /* Jump (one press per landing) */
-    const jumpNow = inputJump();
-    const canJump = p.onGround || p.coyoteMs > 0;
-    if (jumpNow && !jumpHeld && canJump) {
-      p.vy = JUMP_STRENGTH;
-      p.onGround = false;
-      p.coyoteMs = 0;
-    }
-    jumpHeld = jumpNow;
+    updatePlayerLocomotion(dt);
   } else {
     p.vx *= 0.8;
-  }
-
-  /* Gravity */
-  p.vy += GRAVITY;
-  if (p.vy > MAX_FALL_SPEED) p.vy = MAX_FALL_SPEED;
-
-  p.x += p.vx;
-  p.y += p.vy;
-
-  /* Platform collision — feet aligned to platform tops */
-  resolvePlatformCollision(p);
-
-  if (p.onGround) {
-    p.coyoteMs = COYOTE_TIME_MS;
-  } else {
-    p.coyoteMs = Math.max(0, p.coyoteMs - dt);
-  }
-
-  /* Walk animation (after collision so onGround is current) */
-  if (Math.abs(p.vx) > 0.5 && p.onGround && !p.playingRecorder) {
-    p.walkTimer += dt;
-    if (p.walkTimer >= WALK_ANIM_SPEED) {
-      p.walkTimer = 0;
-      p.walkFrame = 1 - p.walkFrame;
+    p.vy += GRAVITY;
+    if (p.vy > MAX_FALL_SPEED) p.vy = MAX_FALL_SPEED;
+    p.x += p.vx;
+    p.y += p.vy;
+    resolvePlatformCollision(p);
+    if (p.onGround) {
+      p.coyoteMs = COYOTE_TIME_MS;
+    } else {
+      p.coyoteMs = Math.max(0, p.coyoteMs - dt);
     }
-  } else {
     p.walkFrame = 0;
     p.walkTimer = 0;
   }
@@ -1895,8 +1985,7 @@ function update(dt) {
     updateLevelFade(dt);
     updateBgNotes(dt);
   } else if (gameState === 'finale') {
-    updateConfetti(dt);
-    updateBgNotes(dt);
+    updateFinale(dt);
   } else if (gameState === 'story') {
     updateStory(dt);
   } else if (gameState === 'start' || gameState === 'gameOver' || gameState === 'riddle') {
@@ -1969,12 +2058,18 @@ function drawGameplayReadabilityOverlay() {
 
 function drawBackground() {
   const cfg = level || LEVELS[0];
-  const bgImg = getImage(cfg.bgKey);
+  let bgKey = cfg.bgKey;
+  if (gameState === 'finale') {
+    bgKey = imageLoaded('end_game_photo') ? 'end_game_photo' : 'finale_background';
+  }
+  const bgImg = getImage(bgKey);
 
   if (isDrawable(bgImg)) {
     const parallax = gameState === 'playing' ? cameraX : 0;
     drawImageCover(bgImg, parallax);
-    drawGameplayReadabilityOverlay();
+    if (gameState === 'playing' || gameState === 'levelFade') {
+      drawGameplayReadabilityOverlay();
+    }
   } else {
     drawGradientBackground(cfg);
   }
@@ -2697,38 +2792,28 @@ function drawGameOverScreen() {
 function drawFinaleScreen() {
   drawBackground();
   drawConfettiLayer();
+  drawPlayer();
   uiButtons = [];
 
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, 118);
+
   ctx.shadowColor = '#ffd700';
-  ctx.shadowBlur = 25;
+  ctx.shadowBlur = 20;
   ctx.fillStyle = '#fff';
-  applyHebrewTextStyle(44, true, 'center');
-  ctx.fillText(TEXT.finaleTitle, CANVAS_WIDTH / 2, 100);
+  applyHebrewTextStyle(40, true, 'center');
+  ctx.fillText(TEXT.finaleTitle, CANVAS_WIDTH / 2, 58);
   ctx.shadowBlur = 0;
 
-  drawOverlayPanel(140, 130, CANVAS_WIDTH - 280, 420);
-
-  ctx.fillStyle = '#fff';
-  applyHebrewTextStyle(20, false, 'center');
-  let ly = 175;
-  for (const line of TEXT.finaleLines) {
-    ctx.fillText(line, CANVAS_WIDTH / 2, ly);
-    ly += line === '' ? 16 : 32;
-  }
-
-  applyHebrewTextStyle(20, true, 'center');
+  applyHebrewTextStyle(18, false, 'center');
   ctx.fillStyle = '#fff9c4';
-  ctx.fillText(TEXT.score + ': ' + score, CANVAS_WIDTH / 2, ly + 10);
+  ctx.fillText(TEXT.score + ': ' + score, CANVAS_WIDTH / 2, 96);
 
-  const happyImg = getImage('girl_happy');
-  if (happyImg) {
-    ctx.drawImage(happyImg, CANVAS_WIDTH / 2 - 55, 400, 110, 165);
-  } else {
-    drawCharacterPlaceholder(CANVAS_WIDTH / 2 - 50, 415, 100, 120, 1);
-  }
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+  ctx.fillRect(0, CANVAS_HEIGHT - 88, CANVAS_WIDTH, 88);
 
-  drawButton(CANVAS_WIDTH / 2 - 220, 540, 200, 50, TEXT.playAgain, 'playAgain');
-  drawButton(CANVAS_WIDTH / 2 + 20, 540, 200, 50, TEXT.homeButton, 'home');
+  drawButton(CANVAS_WIDTH / 2 - 220, CANVAS_HEIGHT - 68, 200, 50, TEXT.playAgain, 'playAgain');
+  drawButton(CANVAS_WIDTH / 2 + 20, CANVAS_HEIGHT - 68, 200, 50, TEXT.homeButton, 'home');
   resetTextStyle();
 }
 
