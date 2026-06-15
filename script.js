@@ -788,12 +788,57 @@ function buildLevelConfig(baseCfg, levelIndex) {
 function isBackgroundPixel(r, g, b, a) {
   if (a < 12) return true;
   /* Solid black (AI character exports) */
-  if (r < 42 && g < 42 && b < 42) return true;
-  /* White checkerboard squares */
-  if (r > 232 && g > 232 && b > 232) return true;
-  /* Gray checkerboard squares — neutral light grays only */
-  if (Math.abs(r - g) < 12 && Math.abs(g - b) < 12 && r > 155 && r < 228) return true;
+  if (r < 48 && g < 48 && b < 48) return true;
+  /* White / off-white export halos and checkerboard whites */
+  if (r > 205 && g > 205 && b > 205 &&
+      Math.abs(r - g) < 22 && Math.abs(g - b) < 22) return true;
+  /* Gray checkerboard squares */
+  if (Math.abs(r - g) < 14 && Math.abs(g - b) < 14 && r > 128 && r < 245) return true;
   return false;
+}
+
+function isFringeBackgroundPixel(r, g, b, a) {
+  if (a < 12) return false;
+  if (r < 55 && g < 55 && b < 55) return true;
+  return r > 188 && g > 188 && b > 188 &&
+    Math.abs(r - g) < 28 && Math.abs(g - b) < 28;
+}
+
+function removeSpriteFringe(px, w, h) {
+  for (let pass = 0; pass < 2; pass++) {
+    const alphaSnapshot = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      alphaSnapshot[i] = px[i * 4 + 3];
+    }
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const cell = y * w + x;
+        const i = cell * 4;
+        if (alphaSnapshot[cell] < 12) continue;
+
+        const r = px[i];
+        const g = px[i + 1];
+        const b = px[i + 2];
+        if (!isFringeBackgroundPixel(r, g, b, px[i + 3])) continue;
+
+        let touchesTransparent = false;
+        if (x === 0 || x === w - 1 || y === 0 || y === h - 1) {
+          touchesTransparent = true;
+        } else {
+          const neighbors = [
+            alphaSnapshot[cell - 1],
+            alphaSnapshot[cell + 1],
+            alphaSnapshot[cell - w],
+            alphaSnapshot[cell + w]
+          ];
+          touchesTransparent = neighbors.some((a) => a < 20);
+        }
+
+        if (touchesTransparent) px[i + 3] = 0;
+      }
+    }
+  }
 }
 
 /*
@@ -853,6 +898,8 @@ function processSpriteImage(img) {
     tryQueue(x, y - 1);
   }
 
+  removeSpriteFringe(px, w, h);
+
   cctx.putImageData(data, 0, 0);
   return c;
 }
@@ -860,6 +907,7 @@ function processSpriteImage(img) {
 function tryLoadImage(path) {
   return new Promise((resolve) => {
     const img = new Image();
+    img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
     img.src = path;
@@ -2212,7 +2260,7 @@ function drawBackground() {
   const bgImg = getImage(bgKey);
 
   if (isDrawable(bgImg)) {
-    const parallax = (gameState === 'playing' || gameState === 'finale') ? cameraX : 0;
+    const parallax = gameState === 'playing' ? cameraX : 0;
     drawImageCover(bgImg, parallax);
     if (gameState === 'playing' || gameState === 'levelFade') {
       drawGameplayReadabilityOverlay();
