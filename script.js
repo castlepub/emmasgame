@@ -475,12 +475,14 @@ function startRiddleTransition(riddleKey) {
     player.vx = 0;
     player.vy = 0;
   }
+  afterGameStateChange();
 }
 
 function startLevelFadeIn() {
   fadeAlpha = 1;
   fadeMode = 'in-from-black';
   gameState = 'levelFade';
+  afterGameStateChange();
 }
 
 function updateLevelFade(dt) {
@@ -500,6 +502,7 @@ function updateLevelFade(dt) {
       fadeMode = null;
       gameState = 'playing';
       if (isMobile()) touchControls.classList.remove('hidden');
+      afterGameStateChange();
     }
   }
 }
@@ -986,6 +989,23 @@ function tryMobileFullscreen() {
   } catch (err) {
     /* optional */
   }
+}
+
+function afterGameStateChange() {
+  syncLayoutMode();
+  resizeCanvas();
+  requestAnimationFrame(() => {
+    syncLayoutMode();
+    resizeCanvas();
+  });
+  setTimeout(() => {
+    syncLayoutMode();
+    resizeCanvas();
+  }, 120);
+  setTimeout(() => {
+    syncLayoutMode();
+    resizeCanvas();
+  }, 400);
 }
 
 function syncLayoutMode() {
@@ -2016,19 +2036,17 @@ function loseLifeAndRestart() {
   }
 
   melodyStep = 0;
-  currentLevel = 0;
-  finaleRiddlesComplete = false;
+  const restartLevel = currentLevel;
   levelRiddleTriggered = false;
   levelRiddleStep = 0;
   resetFadeState();
   exitRiddleState();
   clearAllInput();
   applyHearts();
-  buildLevel(0);
+  buildLevel(restartLevel);
   gameState = 'playing';
   lifeLostFlashUntil = performance.now() + 2800;
-  if (isMobile()) touchControls.classList.remove('hidden');
-  resizeCanvas();
+  afterGameStateChange();
 }
 
 function updateParticles(dt) {
@@ -2939,8 +2957,7 @@ function enterRiddleState(riddleKey) {
   }
 
   tryMobileFullscreen();
-  syncLayoutMode();
-  syncRiddleLayout();
+  afterGameStateChange();
   showRiddleInput();
   updateRiddlePanel();
 }
@@ -2968,8 +2985,6 @@ function exitRiddleState() {
     overlay.setAttribute('aria-hidden', 'true');
   }
   resetRiddleLayoutStyles();
-  syncLayoutMode();
-  if (isMobile()) touchControls.classList.remove('hidden');
 }
 
 function showRiddleInput() {
@@ -3011,6 +3026,7 @@ function submitRiddle() {
     riddleHint = '';
     updateRiddlePanel();
     hideRiddleInput();
+    afterGameStateChange();
     setTimeout(() => handleRiddleSuccess(), 1800);
   } else {
     riddleFeedback = riddle.wrongMessage;
@@ -3046,6 +3062,7 @@ function handleRiddleSuccess() {
     finaleRiddlesComplete = true;
     gameState = 'playing';
     if (isMobile()) touchControls.classList.remove('hidden');
+    afterGameStateChange();
   }
 }
 
@@ -3605,12 +3622,11 @@ async function init() {
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
   window.addEventListener('orientationchange', () => {
-    setTimeout(resizeCanvas, 120);
+    setTimeout(afterGameStateChange, 120);
   });
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => {
-      resizeCanvas();
-      syncRiddleLayout();
+      afterGameStateChange();
     });
     window.visualViewport.addEventListener('scroll', syncRiddleLayout);
   }
