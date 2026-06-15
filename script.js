@@ -1119,12 +1119,17 @@ function getGroundY() {
   return CANVAS_HEIGHT - 80;
 }
 
-function isFootCenterOverGap(footCenter, feetY) {
-  if (feetY > getGroundY() + 8) return false;
+function isHorizontallyOverGap(footCenter) {
   for (const gap of groundGaps) {
     if (footCenter > gap.x + 4 && footCenter < gap.x + gap.width - 4) return true;
   }
   return false;
+}
+
+function isFootCenterOverGap(footCenter, feetY) {
+  const groundY = getGroundY();
+  if (feetY < groundY - 10 || feetY > groundY + 8) return false;
+  return isHorizontallyOverGap(footCenter);
 }
 
 function getPlayerFootSpan(p) {
@@ -1660,7 +1665,7 @@ function updatePlaying(dt) {
   /* Pit — fall through ground gaps (foot center must be over solid ground) */
   const footCenter = p.x + p.width * 0.5;
   const feetY = getPlayerFeetY(p);
-  if (isFootCenterOverGap(footCenter, feetY) && feetY > getGroundY() + 70) {
+  if (isHorizontallyOverGap(footCenter) && feetY > getGroundY() + 70) {
     handlePitFall();
   } else if (p.y > CANVAS_HEIGHT + 50) {
     handlePitFall();
@@ -1706,7 +1711,7 @@ function updatePlaying(dt) {
     if (now < p.invincibleUntil) continue;
 
     if (rectsOverlap(getPlayerBodyHitbox(p), getEnemyHitbox(enemy))) {
-      takeDamage();
+      takeDamage('enemy');
     }
   }
 
@@ -1773,7 +1778,7 @@ function updateBoss(dt, now) {
 
   if (now < player.invincibleUntil) return;
   if (rectsOverlap(getPlayerBodyHitbox(player), getBossHitbox(boss))) {
-    takeDamage();
+    takeDamage('boss');
   }
 }
 
@@ -1793,20 +1798,24 @@ function updateProjectiles(dt, now) {
 
     if (now < player.invincibleUntil) continue;
     if (rectsOverlap(getPlayerBodyHitbox(player), getProjectileHitbox(proj))) {
-      takeDamage();
+      takeDamage('lightning');
       projectiles.splice(i, 1);
     }
   }
 }
 
-function takeDamage() {
+function takeDamage(source = 'pit') {
   const now = performance.now();
   if (now < player.invincibleUntil) return;
 
   hearts--;
   player.invincibleUntil = now + INVINCIBLE_TIME * getDifficulty().invincibleMult;
   player.surprisedUntil = now + 800;
-  playHitSound();
+  if (source === 'enemy' || source === 'boss' || source === 'lightning') {
+    playZapSound();
+  } else {
+    playHitSound();
+  }
 
   if (hearts <= 0) {
     loseLifeAndRestart();
@@ -2945,6 +2954,42 @@ function playCollectSound(golden = false) {
 function playHitSound() {
   playTone(180, 0.25, 'triangle', 0.1);
   playTone(120, 0.3, 'triangle', 0.08, 0.05);
+}
+
+function playNoiseBurst(duration = 0.1, volume = 0.09) {
+  if (muted) return;
+  try {
+    const ac = getAudioContext();
+    if (ac.state === 'suspended') ac.resume();
+    const sampleCount = Math.floor(ac.sampleRate * duration);
+    const buffer = ac.createBuffer(1, sampleCount, ac.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < sampleCount; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    const source = ac.createBufferSource();
+    const gain = ac.createGain();
+    const filter = ac.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 1800;
+    source.buffer = buffer;
+    gain.gain.value = volume;
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(ac.destination);
+    const t = ac.currentTime;
+    source.start(t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+    source.stop(t + duration);
+  } catch (e) { /* audio optional */ }
+}
+
+function playZapSound() {
+  playNoiseBurst(0.09, 0.1);
+  playTone(1500, 0.05, 'sawtooth', 0.12);
+  playTone(900, 0.07, 'square', 0.1, 0.02);
+  playTone(420, 0.14, 'sawtooth', 0.08, 0.05);
+  playTone(180, 0.2, 'triangle', 0.06, 0.08);
 }
 
 function playShootSound() {
