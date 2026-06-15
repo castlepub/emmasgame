@@ -465,6 +465,18 @@ function resetFadeState() {
   pendingRiddleKey = null;
 }
 
+function startCelebrationTransition() {
+  fadeMode = 'out-to-celebration';
+  fadeAlpha = 0;
+  gameState = 'levelFade';
+  touchControls.classList.add('hidden');
+  if (player) {
+    player.vx = 0;
+    player.vy = 0;
+  }
+  afterGameStateChange();
+}
+
 function startRiddleTransition(riddleKey) {
   pendingRiddleKey = riddleKey;
   fadeMode = 'out-to-riddle';
@@ -503,6 +515,13 @@ function updateLevelFade(dt) {
       gameState = 'playing';
       if (isMobile()) touchControls.classList.remove('hidden');
       afterGameStateChange();
+    }
+  } else if (fadeMode === 'out-to-celebration') {
+    fadeAlpha = Math.min(1, fadeAlpha + dt * FADE_SPEED);
+    if (fadeAlpha >= 1) {
+      fadeMode = null;
+      fadeAlpha = 0;
+      enterFinaleCelebration();
     }
   }
 }
@@ -1703,25 +1722,36 @@ function isMobilePortraitPlayBlocked() {
 }
 
 function enterFinaleCelebration() {
+  if (gameState === 'finale') return;
+
+  const worldWidth = level ? level.worldWidth : LEVELS[2].worldWidth;
+  const groundY = getGroundY();
+  const floatingPlatforms = platforms.filter((plat) => !plat.isGround);
+
   gameState = 'finale';
-  cameraX = 0;
   groundGaps.length = 0;
-  platforms = [createPlatform(0, getGroundY(), CANVAS_WIDTH, 80, { isGround: true })];
+  platforms = [
+    createPlatform(0, groundY, worldWidth, 80, { isGround: true }),
+    ...floatingPlatforms
+  ];
   enemies = [];
   boss = null;
   projectiles = [];
   notes = [];
   goldenNotes = [];
   magicRecorder = null;
+
   level = {
+    ...(level || LEVELS[2]),
     name: 'celebration',
-    worldWidth: CANVAS_WIDTH,
-    bgKey: 'end_game_photo'
+    worldWidth,
+    bgKey: 'end_game_photo',
+    hasMagicRecorder: false
   };
 
   if (player) {
-    player.x = Math.min(Math.max(player.x, 40), CANVAS_WIDTH - player.width - 40);
-    player.y = getGroundY() - PLAYER_HEIGHT + PLAYER_FOOT_PADDING;
+    player.x = Math.min(Math.max(player.x, 0), worldWidth - player.width);
+    player.y = groundY - PLAYER_HEIGHT + PLAYER_FOOT_PADDING;
     player.vx = 0;
     player.vy = 0;
     player.onGround = true;
@@ -1730,21 +1760,24 @@ function enterFinaleCelebration() {
     player.playTimer = 0;
     player.walkFrame = 0;
     player.walkTimer = 0;
+    player.invincibleUntil = performance.now() + 999999;
   } else {
     player = createPlayer(
-      CANVAS_WIDTH / 2 - PLAYER_WIDTH / 2,
-      getGroundY() - PLAYER_HEIGHT + PLAYER_FOOT_PADDING
+      worldWidth / 2 - PLAYER_WIDTH / 2,
+      groundY - PLAYER_HEIGHT + PLAYER_FOOT_PADDING
     );
     player.onGround = true;
     player.coyoteMs = COYOTE_TIME_MS;
   }
 
+  const targetCam = player.x - CANVAS_WIDTH * 0.35;
+  cameraX = Math.max(0, Math.min(targetCam, worldWidth - CANVAS_WIDTH));
+
   clearAllInput();
-  spawnConfetti(120);
+  spawnConfetti(140);
   submitScoreToLeaderboard(true);
-  syncLayoutMode();
-  syncTouchControls();
-  resizeCanvas();
+  if (isMobile()) touchControls.classList.remove('hidden');
+  afterGameStateChange();
 }
 
 function updatePlayerLocomotion(dt) {
@@ -1798,23 +1831,29 @@ function updatePlayerLocomotion(dt) {
 }
 
 function updateFinale(dt) {
-  if (!player) return;
+  if (!player || !level) return;
   if (isMobilePortraitPlayBlocked()) return;
 
   updatePlayerLocomotion(dt);
 
   if (player.x < 0) player.x = 0;
-  if (player.x + player.width > CANVAS_WIDTH) {
-    player.x = CANVAS_WIDTH - player.width;
+  if (player.x + player.width > level.worldWidth) {
+    player.x = level.worldWidth - player.width;
   }
 
   if (player.y > CANVAS_HEIGHT + 40) {
-    player.x = CANVAS_WIDTH / 2 - player.width / 2;
     player.y = getGroundY() - PLAYER_HEIGHT + PLAYER_FOOT_PADDING;
     player.vx = 0;
     player.vy = 0;
     player.onGround = true;
     player.coyoteMs = COYOTE_TIME_MS;
+  }
+
+  const targetCam = player.x - CANVAS_WIDTH * 0.35;
+  cameraX += (targetCam - cameraX) * 0.08;
+  if (cameraX < 0) cameraX = 0;
+  if (cameraX > level.worldWidth - CANVAS_WIDTH) {
+    cameraX = Math.max(0, level.worldWidth - CANVAS_WIDTH);
   }
 
   updateConfetti(dt);
@@ -2173,7 +2212,7 @@ function drawBackground() {
   const bgImg = getImage(bgKey);
 
   if (isDrawable(bgImg)) {
-    const parallax = gameState === 'playing' ? cameraX : 0;
+    const parallax = (gameState === 'playing' || gameState === 'finale') ? cameraX : 0;
     drawImageCover(bgImg, parallax);
     if (gameState === 'playing' || gameState === 'levelFade') {
       drawGameplayReadabilityOverlay();
@@ -2899,6 +2938,7 @@ function drawGameOverScreen() {
 
 function drawFinaleScreen() {
   drawBackground();
+  drawPlatforms();
   drawConfettiLayer();
   drawPlayer();
   uiButtons = [];
@@ -3060,9 +3100,7 @@ function handleRiddleSuccess() {
     startLevelFadeIn();
   } else if (currentLevel === 2) {
     finaleRiddlesComplete = true;
-    gameState = 'playing';
-    if (isMobile()) touchControls.classList.remove('hidden');
-    afterGameStateChange();
+    startCelebrationTransition();
   }
 }
 
