@@ -382,6 +382,7 @@ function getActiveRiddle() {
  * Level 2: finale, then birthday → magic flute unlocks
  */
 const LEVEL_FINISH_MARGIN = 420;
+const FINISH_TRIGGER_TOLERANCE = 96;
 const FADE_SPEED = 0.0024;
 const LEVEL_RIDDLE_QUEUE = [
   ['forest'],
@@ -389,9 +390,62 @@ const LEVEL_RIDDLE_QUEUE = [
   ['finale', 'birthday']
 ];
 
+function getFinishLineX() {
+  return level ? level.worldWidth - LEVEL_FINISH_MARGIN : 0;
+}
+
 function isAtLevelFinish(p) {
   if (!level || !p) return false;
-  return p.x + p.width * 0.5 >= level.worldWidth - LEVEL_FINISH_MARGIN;
+  const center = p.x + p.width * 0.5;
+  return center >= getFinishLineX() - FINISH_TRIGGER_TOLERANCE;
+}
+
+function isOverlappingFinishZone(p) {
+  if (!level || !p) return false;
+  const finishX = getFinishLineX();
+  const zone = {
+    x: finishX - 48,
+    y: getGroundY() - 180,
+    width: 120,
+    height: 220
+  };
+  return rectsOverlap(p, zone);
+}
+
+function tryStartLevelEndTransition() {
+  if (!player || !level || levelRiddleTriggered || gameState !== 'playing') return false;
+  if (!hasAllLevelNotes(player)) return false;
+  if (!isAtLevelFinish(player) && !isOverlappingFinishZone(player)) return false;
+
+  const nextKey = getPendingRiddleKey();
+  if (!nextKey) return false;
+
+  levelRiddleTriggered = true;
+  startRiddleTransition(nextKey);
+  return true;
+}
+
+function stabilizePlayerNearFinish(p) {
+  if (!level || !p || !hasAllLevelNotes(p)) return;
+
+  const center = p.x + p.width * 0.5;
+  if (center < getFinishLineX() - 320) return;
+
+  const feetY = getPlayerFeetY(p);
+  const groundY = getGroundY();
+  if (feetY > groundY + 28 || feetY < groundY - 36) return;
+
+  const { center: footCenter, left: footLeft, right: footRight } = getPlayerFootSpan(p);
+  if (isHorizontallyOverGap(footCenter)) return;
+
+  for (const plat of platforms) {
+    if (!plat.isGround) continue;
+    if (!platformOverlapX(p, plat, footLeft, footRight)) continue;
+    snapPlayerToPlatformTop(p, plat.y);
+    return;
+  }
+
+  snapPlayerToPlatformTop(p, groundY);
 }
 
 function hasAllLevelNotes(p) {
@@ -461,7 +515,7 @@ function drawLevelFinishMarker() {
   if (currentLevel === 2 && finaleRiddlesComplete) return;
   if (levelRiddleTriggered && gameState === 'playing') return;
 
-  const finishX = level.worldWidth - LEVEL_FINISH_MARGIN;
+  const finishX = getFinishLineX();
   const sx = finishX - cameraX;
   if (sx < -80 || sx > CANVAS_WIDTH + 80) return;
 
@@ -1703,6 +1757,7 @@ function updatePlayerLocomotion(dt) {
   p.y += p.vy;
 
   resolvePlatformCollision(p);
+  stabilizePlayerNearFinish(p);
 
   if (p.onGround) {
     p.coyoteMs = COYOTE_TIME_MS;
@@ -1788,6 +1843,7 @@ function updatePlaying(dt) {
     p.x += p.vx;
     p.y += p.vy;
     resolvePlatformCollision(p);
+    stabilizePlayerNearFinish(p);
     if (p.onGround) {
       p.coyoteMs = COYOTE_TIME_MS;
     } else {
@@ -1859,18 +1915,7 @@ function updatePlaying(dt) {
   }
 
   /* End of level: all notes + reach finish → fade → riddle */
-  if (
-    hasAllLevelNotes(p) &&
-    isAtLevelFinish(p) &&
-    !levelRiddleTriggered &&
-    gameState === 'playing'
-  ) {
-    const nextKey = getPendingRiddleKey();
-    if (nextKey) {
-      levelRiddleTriggered = true;
-      startRiddleTransition(nextKey);
-    }
-  }
+  tryStartLevelEndTransition();
 
   updateParticles(dt);
   updateBgNotes(dt);
