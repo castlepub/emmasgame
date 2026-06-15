@@ -14,7 +14,7 @@ const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
 
 const touchControls = document.getElementById('touch-controls');
-const riddleInputEl = document.getElementById('riddle-input');
+const riddleOptionsEl = document.getElementById('riddle-options');
 
 const PLAYER_WIDTH = 120;
 const PLAYER_HEIGHT = 180;
@@ -89,18 +89,20 @@ let lastSafeX = 80;
 let lastSafeY = 0;
 let magicRecorder = null;
 
-/* Riddle state */
-let riddleInput = '';
+/* Riddle / question state */
 let riddleHint = '';
 let riddleFeedback = '';
-let activeRiddleKey = null;
+let activeQuestion = null;
 let riddleLocked = false;
+let questionWrongAttempts = 0;
+let onQuestionCorrectCallback = null;
+let usedQuestionIndices = [];
 let levelRiddleTriggered = false;
 let levelRiddleStep = 0;
 let finaleRiddlesComplete = false;
 let fadeAlpha = 0;
 let fadeMode = null; /* 'out-to-riddle' | 'in-from-black' */
-let pendingRiddleKey = null;
+let pendingRiddle = false;
 let storySlideIndex = 0;
 let storyFadeAlpha = 0;
 let storyFadeMode = null; /* null | 'out' | 'in' | 'exit' */
@@ -282,11 +284,10 @@ const TEXT = {
   lifeLostScoreKept: 'ניקוד מצטבר:',
   lifeLostRemaining: 'נותרו',
   lifeLostSuffix: 'חיים',
-  riddlePrompt: 'הקלידי תשובה ולחצי שליחה',
-  riddlePromptMobile: 'קראי את החידה, ואז לחצי על השדה כדי להקליד',
-  submit: 'שליחה',
+  riddlePrompt: 'בחרי את התשובה הנכונה',
+  wrongAnswerGentle: 'כמעט! נסי שוב.',
   playRecorderHint: 'לחצי ♪ לנגינה בחליל!',
-  playRecorderRiddleHint: 'עני על החידות בסוף השלב כדי לפתוח את החליל!',
+  playRecorderRiddleHint: 'עני על השאלות בסוף השלב כדי לפתוח את החליל!',
   allNotesGoToFinish: '✨ אספת את כל התווים! רוצי לסוף השלב ✨',
   levelFinishHint: 'סוף השלב',
   cloudShhh: 'ששש',
@@ -310,85 +311,277 @@ const TEXT = {
   playAgain: 'שחקי שוב'
 };
 
-const RIDDLES = {
-  forest: {
-    title: '✨ חידה ביער ✨',
-    question:
-      'תו קטן הלך לאיבוד ביער.\nהוא שומע: דו, רה, מי…\nאיזה תו מגיע אחר כך?',
-    answers: ['פה', 'פא', 'fa', 'Fa', 'FA'],
-    hint: 'שירי לאט את הסולם: דו, רה, מי…',
-    correctMessage: 'נכון! מצאת את התו הבא והיער התחיל לשיר שוב.',
-    wrongMessage: 'כמעט! תקשיבי למנגינה ותנסי שוב.'
+const questionBank = [
+  {
+    question: 'כמה קווים יש בחמשה מוזיקלית?',
+    options: ['5', '4', '6', '8'],
+    correct: '5',
+    hint: 'על החמשה כותבים תווים.',
+    success: 'נכון! לחמשה יש חמישה קווים.'
   },
-  cloud: {
-    title: '✨ ענני השקט ✨',
-    question:
-      'ענני השקט גנבו את המוזיקה.\nאיזה כלי קסום יכול להחזיר את הצלילים?',
-    answers: ['חליל', 'חלילית', 'חליל צד', 'מוזיקה', 'מנגינה'],
-    hint: 'זה כלי שאפשר לנשוף בו ולנגן איתו מנגינות.',
-    correctMessage: 'מעולה! הצלילים חזרו לרקוד בין העננים.',
-    wrongMessage: 'לא נורא. תחשבי על כלי נשיפה קטן וקסום.'
+  {
+    question: 'איזה תו מגיע אחרי דו?',
+    options: ['רה', 'מי', 'פה', 'סול'],
+    correct: 'רה',
+    hint: 'נסי לשיר: דו...',
+    success: 'נכון! אחרי דו מגיע רה.'
   },
-  boss: {
-    title: '✨ ענן הסערה ✨',
-    question:
-      'ענן הסערה יורה ברקים כשהמנגינה נעצרת.\nמה מוזיקאית אמיצה עושה כששיר נהיה קשה?',
-    answers: [
-      'ממשיכה', 'מנסה שוב', 'מתאמנת', 'לא מוותרת',
-      'ממשיכים', 'לנסות שוב', 'להתאמן', 'לא לוותר'
-    ],
-    hint: 'אף אחד לא מנגן מושלם בפעם הראשונה.',
-    correctMessage: 'נכון! האומץ שלך החליש את ענן הסערה.',
-    wrongMessage: 'כמעט. מוזיקה טובה צריכה סבלנות ואומץ.'
+  {
+    question: 'איזה תו מגיע אחרי רה?',
+    options: ['מי', 'דו', 'סול', 'לה'],
+    correct: 'מי',
+    hint: 'שירי לאט: דו, רה...',
+    success: 'מעולה! אחרי רה מגיע מי.'
   },
-  finale: {
-    title: '✨ מנגינת יום ההולדת ✨',
-    question: 'מנגינה לא עשויה רק מתווים.\nמה עוד היא צריכה?',
-    answers: ['לב', 'אהבה', 'רגש', 'קסם', 'דמיון', 'שמחה', 'חיוך'],
-    hint: 'המוזיקה הכי יפה מגיעה מבפנים.',
-    correctMessage: 'יפה מאוד! עכשיו המנגינה באמת קסומה.',
-    wrongMessage: 'נסי שוב. תחשבי מה מרגישים כששומעים שיר יפה.'
+  {
+    question: 'איזה תו מגיע אחרי מי?',
+    options: ['פה', 'רה', 'לה', 'סי'],
+    correct: 'פה',
+    hint: 'המשיכי את הסולם.',
+    success: 'נכון! אחרי מי מגיע פה.'
   },
-  birthday: {
-    title: '✨ שאלת הסיום ✨',
-    question: 'היום הוא יום מיוחד במיוחד.\nבת כמה מוזיקאית יום ההולדת?',
-    answers: ['8', 'שמונה', 'בת שמונה', 'בת 8'],
-    hint: 'תספרי את הנרות על העוגה.',
-    correctMessage: 'נכון! יום הולדת 8 שמח!',
-    wrongMessage: 'כמעט. תנסי לחשוב על מספר הנרות.'
+  {
+    question: 'איזה תו מגיע אחרי פה?',
+    options: ['סול', 'מי', 'דו', 'סי'],
+    correct: 'סול',
+    hint: 'דו, רה, מי, פה...',
+    success: 'יפה! אחרי פה מגיע סול.'
+  },
+  {
+    question: 'איזה תו מגיע אחרי סול?',
+    options: ['לה', 'פה', 'מי', 'דו'],
+    correct: 'לה',
+    hint: 'התו הבא עולה למעלה.',
+    success: 'נכון! אחרי סול מגיע לה.'
+  },
+  {
+    question: 'איזה תו מגיע אחרי לה?',
+    options: ['סי', 'סול', 'פה', 'רה'],
+    correct: 'סי',
+    hint: 'כמעט סוף הסולם.',
+    success: 'מעולה! אחרי לה מגיע סי.'
+  },
+  {
+    question: 'איזה תו מגיע אחרי סי?',
+    options: ['דו', 'לה', 'פה', 'רה'],
+    correct: 'דו',
+    hint: 'הסולם חוזר להתחלה, אבל גבוה יותר.',
+    success: 'נכון! אחרי סי מגיע דו.'
+  },
+  {
+    question: 'איזה כלי מנגנים בו בנשיפה?',
+    options: ['חלילית', 'תוף', 'פסנתר', 'גיטרה'],
+    correct: 'חלילית',
+    hint: 'צריך לנשוף לתוכו.',
+    success: 'נכון! חלילית היא כלי נשיפה.'
+  },
+  {
+    question: 'איזה כלי מנגנים בו עם מקלות?',
+    options: ['תוף', 'חלילית', 'כינור', 'נבל'],
+    correct: 'תוף',
+    hint: 'הוא עושה בום בום.',
+    success: 'נכון! תוף מנגנים עם ידיים או מקלות.'
+  },
+  {
+    question: 'איזה כלי מנגנים בו עם קשת?',
+    options: ['כינור', 'פסנתר', 'חלילית', 'תוף'],
+    correct: 'כינור',
+    hint: 'הקשת נעה על המיתרים.',
+    success: 'נכון! בכינור מנגנים עם קשת.'
+  },
+  {
+    question: 'באיזה כלי יש קלידים שחורים ולבנים?',
+    options: ['פסנתר', 'תוף', 'חצוצרה', 'חלילית'],
+    correct: 'פסנתר',
+    hint: 'יושבים מולו ולוחצים על קלידים.',
+    success: 'נכון! לפסנתר יש קלידים.'
+  },
+  {
+    question: 'באיזה כלי יש מיתרים ופורטים עליו?',
+    options: ['גיטרה', 'חלילית', 'תוף', 'חצוצרה'],
+    correct: 'גיטרה',
+    hint: 'אפשר לנגן עליו אקורדים.',
+    success: 'נכון! לגיטרה יש מיתרים.'
+  },
+  {
+    question: 'מה עושה מנצח בתזמורת?',
+    options: ['מוביל את הנגנים', 'מוכר כרטיסים', 'מצייר תווים', 'מכבה את האורות'],
+    correct: 'מוביל את הנגנים',
+    hint: 'הוא עומד מול התזמורת ומסמן בידיים.',
+    success: 'נכון! המנצח עוזר לכולם לנגן יחד.'
+  },
+  {
+    question: 'מה זה קצב במוזיקה?',
+    options: ['הפעימות של המוזיקה', 'צבע של כלי', 'שם של תו', 'סוג של עוגה'],
+    correct: 'הפעימות של המוזיקה',
+    hint: 'אפשר למחוא כפיים לפי הקצב.',
+    success: 'נכון! קצב הוא הפעימות של המוזיקה.'
+  },
+  {
+    question: 'מה זה מנגינה?',
+    options: ['רצף של צלילים', 'כיסא לנגנים', 'קופסה לכלים', 'ציור של פרחים'],
+    correct: 'רצף של צלילים',
+    hint: 'מנגינה היא מה שאפשר לזמזם.',
+    success: 'נכון! מנגינה היא רצף של צלילים.'
+  },
+  {
+    question: 'מה זה שיר?',
+    options: ['מוזיקה עם מילים', 'כלי נשיפה', 'סוג של תו', 'כפתור בפסנתר'],
+    correct: 'מוזיקה עם מילים',
+    hint: 'בדרך כלל שרים אותו.',
+    success: 'נכון! שיר הוא מוזיקה עם מילים.'
+  },
+  {
+    question: 'מה עושים כששיר קשה לנגינה?',
+    options: ['מתאמנים', 'זורקים את הכלי', 'מפסיקים לנצח', 'מוחקים את התווים'],
+    correct: 'מתאמנים',
+    hint: 'כל נגנית משתפרת עם זמן.',
+    success: 'נכון! אימון הופך את המוזיקה לקסומה.'
+  },
+  {
+    question: 'מה עוזר לנגנים לנגן יחד?',
+    options: ['קצב משותף', 'רעש חזק', 'חושך', 'בלונים'],
+    correct: 'קצב משותף',
+    hint: 'כולם צריכים להרגיש את אותה פעימה.',
+    success: 'נכון! קצב משותף מחבר בין נגנים.'
+  },
+  {
+    question: 'איך נקרא קול גבוה מאוד?',
+    options: ['צליל גבוה', 'צליל נמוך', 'שקט', 'תוף'],
+    correct: 'צליל גבוה',
+    hint: 'כמו ציוץ של ציפור.',
+    success: 'נכון! זה צליל גבוה.'
+  },
+  {
+    question: 'איך נקרא קול נמוך מאוד?',
+    options: ['צליל נמוך', 'צליל גבוה', 'תו מהיר', 'פרח'],
+    correct: 'צליל נמוך',
+    hint: 'כמו קול עמוק.',
+    success: 'נכון! זה צליל נמוך.'
+  },
+  {
+    question: 'מה אומר הסימן הזה במוזיקה: ♫ ?',
+    options: ['תווים', 'לב', 'ענן', 'עוגה'],
+    correct: 'תווים',
+    hint: 'זה סימן של צלילים.',
+    success: 'נכון! אלה תווים.'
+  },
+  {
+    question: 'מה הכי חשוב כשמנגנים עם חברים?',
+    options: ['להקשיב אחד לשני', 'לנגן הכי חזק', 'לרוץ מהר', 'להסתיר את הכלי'],
+    correct: 'להקשיב אחד לשני',
+    hint: 'מוזיקה טובה צריכה הקשבה.',
+    success: 'נכון! נגנים טובים מקשיבים.'
+  },
+  {
+    question: 'מה עושה תו ארוך?',
+    options: ['נמשך יותר זמן', 'נעלם מיד', 'נהיה שקט תמיד', 'הופך לעוגה'],
+    correct: 'נמשך יותר זמן',
+    hint: 'מחזיקים אותו יותר זמן.',
+    success: 'נכון! תו ארוך נמשך יותר זמן.'
+  },
+  {
+    question: 'מה עושה תו קצר?',
+    options: ['נשמע לזמן קצר', 'נשמע כל היום', 'מחליף צבע', 'עף לשמיים'],
+    correct: 'נשמע לזמן קצר',
+    hint: 'הוא בא והולך מהר.',
+    success: 'נכון! תו קצר נשמע לזמן קצר.'
+  },
+  {
+    question: 'מה מתאים לעשות לפי קצב?',
+    options: ['למחוא כפיים', 'לישון', 'לשתוק תמיד', 'לספור עננים'],
+    correct: 'למחוא כפיים',
+    hint: 'אפשר לעשות את זה עם הידיים.',
+    success: 'נכון! מחיאות כפיים עוזרות להרגיש קצב.'
+  },
+  {
+    question: 'איזה כלי מתאים ללוות שירה ליד מדורה?',
+    options: ['גיטרה', 'סיר', 'מפתח', 'ענן'],
+    correct: 'גיטרה',
+    hint: 'הרבה אנשים שרים איתו יחד.',
+    success: 'נכון! גיטרה נהדרת לליווי שירה.'
+  },
+  {
+    question: 'מה קורה כשמנגנים מהר יותר?',
+    options: ['הקצב נעשה מהיר', 'הצלילים נעלמים', 'הכלי נהיה קטן', 'השיר מפסיק'],
+    correct: 'הקצב נעשה מהיר',
+    hint: 'מהיר קשור לקצב.',
+    success: 'נכון! הקצב נעשה מהיר יותר.'
+  },
+  {
+    question: 'מה קורה כשמנגנים לאט יותר?',
+    options: ['הקצב נעשה איטי', 'המוזיקה נעלמת', 'התווים קופצים', 'העוגה שרה'],
+    correct: 'הקצב נעשה איטי',
+    hint: 'איטי הוא ההפך ממהיר.',
+    success: 'נכון! הקצב נעשה איטי יותר.'
+  },
+  {
+    question: 'מה צריך לעשות לפני שמופיעים מול קהל?',
+    options: ['להתאמן', 'לשכוח את השיר', 'לכבות את המוזיקה', 'להחביא את הכלי'],
+    correct: 'להתאמן',
+    hint: 'אימון נותן ביטחון.',
+    success: 'נכון! אימון עוזר להופיע בביטחון.'
+  },
+  {
+    question: 'מה מוזיקה יכולה לגרום לנו להרגיש?',
+    options: ['שמחה', 'רק רעב', 'רק עייפות', 'כלום אף פעם'],
+    correct: 'שמחה',
+    hint: 'מוזיקה יכולה לגעת בלב.',
+    success: 'נכון! מוזיקה יכולה לשמח.'
   }
-};
+];
 
-function normalizeRiddleAnswer(str) {
-  return str.trim().replace(/\s+/g, ' ').toLowerCase();
+function shuffleArray(items) {
+  const shuffled = items.slice();
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
 }
 
-function isRiddleAnswerCorrect(riddle, input) {
-  const normalized = normalizeRiddleAnswer(input);
-  return riddle.answers.some((a) => normalizeRiddleAnswer(a) === normalized);
+function getRandomQuestion() {
+  if (usedQuestionIndices.length >= questionBank.length) {
+    usedQuestionIndices = [];
+  }
+
+  const available = questionBank
+    .map((_, index) => index)
+    .filter((index) => !usedQuestionIndices.includes(index));
+  const pickIndex = available[Math.floor(Math.random() * available.length)];
+  usedQuestionIndices.push(pickIndex);
+
+  const source = questionBank[pickIndex];
+  return {
+    question: source.question,
+    options: shuffleArray(source.options),
+    correct: source.correct,
+    hint: source.hint,
+    success: source.success,
+    bankIndex: pickIndex
+  };
 }
 
-function getActiveRiddle() {
-  return activeRiddleKey ? RIDDLES[activeRiddleKey] : null;
+function resetQuestionSessionState() {
+  activeQuestion = null;
+  questionWrongAttempts = 0;
+  onQuestionCorrectCallback = null;
+  riddleLocked = false;
 }
 
 /*
  * Riddle flow (end of level only):
  * 1. Collect every note on the level.
  * 2. Walk to the finish line on the right (golden marker appears).
- * 3. Screen fades to black → question appears.
- * Level 0: forest → Level 1
- * Level 1: cloud, then boss → Level 2
- * Level 2: finale, then birthday → magic flute unlocks
+ * 3. Screen fades to black → multiple-choice question appears.
+ * Level 0: 1 question → Level 1
+ * Level 1: 2 questions → Level 2
+ * Level 2: 2 questions → magic flute unlocks → finale celebration
  */
 const LEVEL_FINISH_MARGIN = 420;
 const FINISH_TRIGGER_TOLERANCE = 96;
 const FADE_SPEED = 0.0024;
-const LEVEL_RIDDLE_QUEUE = [
-  ['forest'],
-  ['cloud', 'boss'],
-  ['finale', 'birthday']
-];
+const RIDDLES_PER_LEVEL = [1, 2, 2];
 
 function getFinishLineX() {
   return level ? level.worldWidth - LEVEL_FINISH_MARGIN : 0;
@@ -417,11 +610,10 @@ function tryStartLevelEndTransition() {
   if (!hasAllLevelNotes(player)) return false;
   if (!isAtLevelFinish(player) && !isOverlappingFinishZone(player)) return false;
 
-  const nextKey = getPendingRiddleKey();
-  if (!nextKey) return false;
+  if (!hasPendingRiddle()) return false;
 
   levelRiddleTriggered = true;
-  startRiddleTransition(nextKey);
+  startRiddleTransition();
   return true;
 }
 
@@ -452,17 +644,16 @@ function hasAllLevelNotes(p) {
   return p && level && p.collectedThisLevel >= level.notesRequired;
 }
 
-function getPendingRiddleKey() {
-  if (currentLevel === 2 && finaleRiddlesComplete) return null;
-  const queue = LEVEL_RIDDLE_QUEUE[currentLevel];
-  if (!queue || levelRiddleStep >= queue.length) return null;
-  return queue[levelRiddleStep];
+function hasPendingRiddle() {
+  if (currentLevel === 2 && finaleRiddlesComplete) return false;
+  const count = RIDDLES_PER_LEVEL[currentLevel] || 0;
+  return levelRiddleStep < count;
 }
 
 function resetFadeState() {
   fadeAlpha = 0;
   fadeMode = null;
-  pendingRiddleKey = null;
+  pendingRiddle = false;
 }
 
 function startCelebrationTransition() {
@@ -477,8 +668,8 @@ function startCelebrationTransition() {
   afterGameStateChange();
 }
 
-function startRiddleTransition(riddleKey) {
-  pendingRiddleKey = riddleKey;
+function startRiddleTransition() {
+  pendingRiddle = true;
   fadeMode = 'out-to-riddle';
   fadeAlpha = 0;
   gameState = 'levelFade';
@@ -501,11 +692,10 @@ function updateLevelFade(dt) {
   if (fadeMode === 'out-to-riddle') {
     fadeAlpha = Math.min(1, fadeAlpha + dt * FADE_SPEED);
     if (fadeAlpha >= 1) {
-      const key = pendingRiddleKey;
-      pendingRiddleKey = null;
+      pendingRiddle = false;
       fadeMode = null;
       fadeAlpha = 0;
-      enterRiddleState(key);
+      enterRiddleState();
     }
   } else if (fadeMode === 'in-from-black') {
     fadeAlpha = Math.max(0, fadeAlpha - dt * FADE_SPEED);
@@ -976,43 +1166,7 @@ document.addEventListener('keydown', (e) => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
     if (gameState === 'playing' || gameState === 'finale') e.preventDefault();
   }
-  if (gameState === 'riddle' && e.code === 'Enter') {
-    e.preventDefault();
-    submitRiddle();
-  }
 });
-
-if (riddleInputEl) {
-  riddleInputEl.addEventListener('input', () => {
-    if (gameState === 'riddle') {
-      riddleInput = riddleInputEl.value;
-    }
-  });
-  riddleInputEl.addEventListener('keydown', (e) => {
-    if (gameState !== 'riddle') return;
-    e.stopPropagation();
-    if (e.code === 'Enter') {
-      e.preventDefault();
-      submitRiddle();
-    }
-  });
-  riddleInputEl.addEventListener('focus', () => {
-    if (gameState !== 'riddle') return;
-    setTimeout(syncRiddleLayout, 80);
-    setTimeout(syncRiddleLayout, 320);
-  });
-  riddleInputEl.addEventListener('blur', () => {
-    if (gameState === 'riddle') setTimeout(syncRiddleLayout, 80);
-  });
-}
-
-const riddleSubmitBtn = document.getElementById('riddle-submit-btn');
-if (riddleSubmitBtn) {
-  riddleSubmitBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    submitRiddle();
-  });
-}
 
 document.addEventListener('keyup', (e) => {
   keys[e.code] = false;
@@ -1538,7 +1692,6 @@ function buildLevel(levelIndex) {
   lastSafeX = player.x;
   lastSafeY = player.y;
   cameraX = 0;
-  riddleInput = '';
   riddleHint = '';
   riddleFeedback = '';
   levelRiddleStep = 0;
@@ -3009,17 +3162,93 @@ function drawFinaleScreen() {
   resetTextStyle();
 }
 
-function syncRiddleInputEl() {
-  if (riddleInputEl) riddleInputEl.value = riddleInput;
+function updateRiddlePanel() {
+  const questionEl = document.getElementById('riddle-question');
+  const hintEl = document.getElementById('riddle-hint-text');
+  const feedbackEl = document.getElementById('riddle-feedback-text');
+
+  if (questionEl && activeQuestion) questionEl.textContent = activeQuestion.question;
+  if (feedbackEl) feedbackEl.textContent = riddleFeedback || '';
+  if (hintEl) hintEl.textContent = riddleHint || '';
 }
 
-function enterRiddleState(riddleKey) {
-  activeRiddleKey = riddleKey;
-  gameState = 'riddle';
-  riddleInput = '';
+function setRiddleOptionButtonsDisabled(disabled) {
+  if (!riddleOptionsEl) return;
+  riddleOptionsEl.querySelectorAll('.riddle-option-btn').forEach((btn) => {
+    btn.disabled = disabled;
+  });
+}
+
+function highlightCorrectOption() {
+  if (!riddleOptionsEl || !activeQuestion) return;
+  riddleOptionsEl.querySelectorAll('.riddle-option-btn').forEach((btn) => {
+    if (btn.dataset.answer === activeQuestion.correct) {
+      btn.classList.add('correct-highlight');
+    }
+  });
+}
+
+function renderRiddleOptions(questionObject) {
+  if (!riddleOptionsEl) return;
+  riddleOptionsEl.innerHTML = '';
+
+  questionObject.options.forEach((optionText) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'riddle-option-btn';
+    btn.textContent = optionText;
+    btn.dataset.answer = optionText;
+    btn.addEventListener('click', () => handleRiddleOptionClick(optionText, btn));
+    riddleOptionsEl.appendChild(btn);
+  });
+}
+
+function handleRiddleOptionClick(optionText, buttonEl) {
+  if (!activeQuestion || riddleLocked) return;
+
+  if (optionText === activeQuestion.correct) {
+    riddleLocked = true;
+    setRiddleOptionButtonsDisabled(true);
+    buttonEl.classList.add('correct-chosen');
+    playRiddleCorrectSound();
+    riddleFeedback = activeQuestion.success;
+    riddleHint = '';
+    updateRiddlePanel();
+    afterGameStateChange();
+
+    const callback = onQuestionCorrectCallback;
+    onQuestionCorrectCallback = null;
+    setTimeout(() => {
+      if (callback) callback();
+    }, 800);
+    return;
+  }
+
+  questionWrongAttempts++;
+  riddleFeedback = TEXT.wrongAnswerGentle;
+  riddleHint = activeQuestion.hint;
+  updateRiddlePanel();
+
+  if (questionWrongAttempts >= 2) {
+    highlightCorrectOption();
+  }
+}
+
+function showQuestionModal(questionObject, onCorrectCallback) {
+  activeQuestion = questionObject;
+  questionWrongAttempts = 0;
+  riddleLocked = false;
   riddleHint = '';
   riddleFeedback = '';
-  riddleLocked = false;
+  onQuestionCorrectCallback = onCorrectCallback;
+
+  updateRiddlePanel();
+  renderRiddleOptions(questionObject);
+  syncRiddleLayout();
+}
+
+function enterRiddleState() {
+  gameState = 'riddle';
   clearAllInput();
   touchControls.classList.add('hidden');
 
@@ -3036,33 +3265,18 @@ function enterRiddleState(riddleKey) {
   }
 
   const promptEl = document.getElementById('riddle-prompt');
-  if (promptEl) {
-    promptEl.textContent = isMobile() ? TEXT.riddlePromptMobile : TEXT.riddlePrompt;
-  }
+  if (promptEl) promptEl.textContent = TEXT.riddlePrompt;
 
   tryMobileFullscreen();
   afterGameStateChange();
-  showRiddleInput();
-  updateRiddlePanel();
-}
-
-function updateRiddlePanel() {
-  const riddle = getActiveRiddle();
-  const questionEl = document.getElementById('riddle-question');
-  const hintEl = document.getElementById('riddle-hint-text');
-  const feedbackEl = document.getElementById('riddle-feedback-text');
-  const titleEl = document.getElementById('riddle-title');
-
-  if (titleEl && riddle) titleEl.textContent = riddle.title;
-  if (questionEl && riddle) questionEl.textContent = riddle.question;
-  if (feedbackEl) feedbackEl.textContent = riddleFeedback || '';
-  if (hintEl) hintEl.textContent = riddleHint || '';
+  showQuestionModal(getRandomQuestion(), handleRiddleSuccess);
 }
 
 function exitRiddleState() {
-  hideRiddleInput();
-  activeRiddleKey = null;
-  riddleLocked = false;
+  resetQuestionSessionState();
+  if (riddleOptionsEl) riddleOptionsEl.innerHTML = '';
+  riddleHint = '';
+  riddleFeedback = '';
   const overlay = document.getElementById('riddle-overlay');
   if (overlay) {
     overlay.classList.add('hidden');
@@ -3071,65 +3285,15 @@ function exitRiddleState() {
   resetRiddleLayoutStyles();
 }
 
-function showRiddleInput() {
-  if (!riddleInputEl) return;
-  riddleInputEl.value = riddleInput;
-  syncRiddleLayout();
-  if (isMobile()) return;
-  requestAnimationFrame(() => {
-    riddleInputEl.focus({ preventScroll: true });
-  });
-}
-
-function hideRiddleInput() {
-  if (!riddleInputEl) return;
-  riddleInputEl.blur();
-  riddleInputEl.value = '';
-  riddleInput = '';
-}
-
-function submitRiddle() {
-  const riddle = getActiveRiddle();
-  if (!riddle || riddleLocked) return;
-
-  if (riddleInputEl) riddleInput = riddleInputEl.value;
-  const normalized = riddleInput.trim();
-
-  if (!normalized) {
-    riddleFeedback = 'כתבי תשובה קטנה — את יכולה!';
-    riddleHint = riddle.hint;
-    updateRiddlePanel();
-    showRiddleInput();
-    return;
-  }
-
-  if (isRiddleAnswerCorrect(riddle, normalized)) {
-    riddleLocked = true;
-    playRiddleCorrectSound();
-    riddleFeedback = riddle.correctMessage;
-    riddleHint = '';
-    updateRiddlePanel();
-    hideRiddleInput();
-    afterGameStateChange();
-    setTimeout(() => handleRiddleSuccess(), 1800);
-  } else {
-    riddleFeedback = riddle.wrongMessage;
-    riddleHint = riddle.hint;
-    updateRiddlePanel();
-    showRiddleInput();
-  }
-}
-
 function handleRiddleSuccess() {
-  riddleLocked = false;
   riddleFeedback = '';
   riddleHint = '';
   exitRiddleState();
   levelRiddleStep++;
 
-  const queue = LEVEL_RIDDLE_QUEUE[currentLevel] || [];
-  if (levelRiddleStep < queue.length) {
-    startRiddleTransition(queue[levelRiddleStep]);
+  const riddlesForLevel = RIDDLES_PER_LEVEL[currentLevel] || 0;
+  if (levelRiddleStep < riddlesForLevel) {
+    startRiddleTransition();
     return;
   }
 
@@ -3533,6 +3697,7 @@ function startGame() {
   finaleRiddlesComplete = false;
   levelRiddleTriggered = false;
   levelRiddleStep = 0;
+  usedQuestionIndices = [];
   resetFadeState();
   buildLevel(0);
   gameState = 'playing';
@@ -3568,10 +3733,12 @@ function resetGame() {
   storyFadeAlpha = 0;
   storyFadeMode = null;
   screenFadeAlpha = 0;
-  activeRiddleKey = null;
+  activeQuestion = null;
   riddleFeedback = '';
   riddleHint = '';
   riddleLocked = false;
+  usedQuestionIndices = [];
+  resetQuestionSessionState();
   particles.length = 0;
   confetti.length = 0;
   jumpHeld = false;
