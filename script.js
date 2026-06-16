@@ -35,6 +35,7 @@ const INVINCIBLE_TIME = 1800; /* ms */
 const WALK_ANIM_SPEED = 120; /* ms per frame */
 const COYOTE_TIME_MS = 140; /* grace period to jump after leaving a ledge */
 const MAX_HEARTS = 3;
+const EASY_HEARTS = 5;
 const MAX_LIVES = 3;
 const PLAYER_NAME_STORAGE_KEY = 'emmasgame_player_name';
 const PLAYER_NAME_READY_KEY = 'emmasgame_name_ready';
@@ -267,6 +268,7 @@ const TEXT = {
   storyClose: 'סגירה',
   chooseDifficulty: 'בחרי רמת קושי:',
   easyMode: 'מצב קל',
+  mediumMode: 'מצב בינוני',
   hardMode: 'מצב קשה',
   score: 'ניקוד',
   notes: 'תווים',
@@ -922,6 +924,25 @@ const DIFFICULTY = {
   easy: {
     label: 'קל',
     hudLabel: 'מצב קל',
+    hearts: EASY_HEARTS,
+    hasBoss: false,
+    enemyCountMult: 0.45,
+    enemySpeedMult: 0.62,
+    gapCountOffset: -3,
+    gapWidthMult: 0.75,
+    notesOffset: -5,
+    goldenCountOffset: 0,
+    bossSpeedMult: 0.75,
+    bossShootCooldownMult: 2.6,
+    projectileSpeedMult: 0.5,
+    bossShootRange: 520,
+    invincibleMult: 1.5
+  },
+  medium: {
+    label: 'בינוני',
+    hudLabel: 'מצב בינוני',
+    hearts: MAX_HEARTS,
+    hasBoss: true,
     enemyCountMult: 0.6,
     enemySpeedMult: 0.72,
     gapCountOffset: -2,
@@ -937,6 +958,8 @@ const DIFFICULTY = {
   hard: {
     label: 'קשה',
     hudLabel: 'מצב קשה',
+    hearts: MAX_HEARTS,
+    hasBoss: true,
     enemyCountMult: 1.4,
     enemySpeedMult: 1.28,
     gapCountOffset: 2,
@@ -953,6 +976,16 @@ const DIFFICULTY = {
 
 function getDifficulty() {
   return DIFFICULTY[difficultyMode] || DIFFICULTY.easy;
+}
+
+function getDifficultyLabel(mode) {
+  if (mode === 'hard') return DIFFICULTY.hard.label;
+  if (mode === 'medium') return DIFFICULTY.medium.label;
+  return DIFFICULTY.easy.label;
+}
+
+function usesGentleLevelLayout() {
+  return difficultyMode === 'easy' || difficultyMode === 'medium';
 }
 
 function buildLevelConfig(baseCfg, levelIndex) {
@@ -1680,7 +1713,9 @@ function buildLevel(levelIndex) {
 
   const bossY = groundY - BOSS_HEIGHT - 170 - levelIndex * 24;
   const bossX = cfg.worldWidth - (levelIndex === 0 ? 640 : 480);
-  boss = createBoss(bossX, bossY);
+  if (getDifficulty().hasBoss) {
+    boss = createBoss(bossX, bossY);
+  }
 
   if (cfg.hasMagicRecorder) {
     magicRecorder = createMagicRecorder(cfg.worldWidth - 220, groundY - 90);
@@ -1752,7 +1787,7 @@ function buildGroundWithGaps(groundY, worldWidth, gapCount, gapWidthMult = 1) {
 }
 
 function buildJumpChallengeLevel(groundY, worldWidth, noteCount, goldenCount) {
-  const skyNoteCount = (currentLevel === 0 && difficultyMode === 'easy') ? 1 : 2;
+  const skyNoteCount = (currentLevel === 0 && usesGentleLevelLayout()) ? 1 : 2;
   const chainNoteCount = Math.max(1, noteCount - skyNoteCount);
   let notesPlaced = 0;
   let goldenLeft = goldenCount;
@@ -1760,7 +1795,7 @@ function buildJumpChallengeLevel(groundY, worldWidth, noteCount, goldenCount) {
   const endX = worldWidth - 320;
   const chainSpacing = (endX - startX) / Math.max(1, chainNoteCount - 1);
   const stepX = Math.min(102, chainSpacing * 0.42);
-  const forestEasy = currentLevel === 0 && difficultyMode === 'easy';
+  const forestEasy = currentLevel === 0 && usesGentleLevelLayout();
   const stepY = forestEasy ? 56 : 68;
 
   for (let c = 0; c < chainNoteCount; c++) {
@@ -1815,7 +1850,7 @@ function buildJumpChallengeLevel(groundY, worldWidth, noteCount, goldenCount) {
  */
 function addSkyChallengeNotes(groundY, worldWidth, goldenLeft, skyNoteCount = 2) {
   const levelIdx = currentLevel;
-  const easy = difficultyMode === 'easy';
+  const easy = usesGentleLevelLayout();
   const platWBase = easy ? 102 : 74;
 
   const challenges = [];
@@ -2723,16 +2758,20 @@ function drawHUD() {
   const barH = compact ? 50 : 58;
   const barR = compact ? 12 : 16;
   const heartsStartX = compact ? 24 : 32;
-  const heartSize = compact ? 22 : 28;
-  const heartStep = compact ? 26 : 36;
-  const heartsEndX = heartsStartX + (MAX_HEARTS - 1) * heartStep + heartSize;
+  const heartSize = compact
+    ? (maxHearts > MAX_HEARTS ? 18 : 22)
+    : (maxHearts > MAX_HEARTS ? 24 : 28);
+  const heartStep = compact
+    ? (maxHearts > MAX_HEARTS ? 20 : 26)
+    : (maxHearts > MAX_HEARTS ? 28 : 36);
+  const heartsEndX = heartsStartX + (maxHearts - 1) * heartStep + heartSize;
 
   ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
   roundRect(16, barY, CANVAS_WIDTH - 32, barH, barR);
   ctx.fill();
 
   const heartY = barY + (compact ? 13 : 14);
-  for (let i = 0; i < MAX_HEARTS; i++) {
+  for (let i = 0; i < maxHearts; i++) {
     const hx = heartsStartX + i * heartStep;
     const hy = heartY;
     const heartImg = getImage('heart');
@@ -2908,6 +2947,10 @@ function handleButton(id) {
     difficultyMode = 'easy';
     tryStartBackgroundMusic();
     startGame();
+  } else if (id === 'startMedium') {
+    difficultyMode = 'medium';
+    tryStartBackgroundMusic();
+    startGame();
   } else if (id === 'startHard') {
     difficultyMode = 'hard';
     tryStartBackgroundMusic();
@@ -2970,8 +3013,9 @@ function drawStartScreen() {
     applyHebrewTextStyle(22, true, 'center');
     ctx.fillText(TEXT.chooseDifficulty, CANVAS_WIDTH / 2, 548);
 
-    drawButton(CANVAS_WIDTH / 2 - 330, 578, 310, 54, TEXT.easyMode, 'startEasy');
-    drawButton(CANVAS_WIDTH / 2 + 20, 578, 310, 54, TEXT.hardMode, 'startHard');
+    drawButton(260, 578, 240, 54, TEXT.easyMode, 'startEasy');
+    drawButton(520, 578, 240, 54, TEXT.mediumMode, 'startMedium');
+    drawButton(780, 578, 240, 54, TEXT.hardMode, 'startHard');
     drawButton(CANVAS_WIDTH - 150, 14, 130, 38, '📖 ' + TEXT.storyButton, 'openStory');
   } else {
   ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
@@ -3030,8 +3074,9 @@ function drawStartScreen() {
   applyHebrewTextStyle(20, true, 'center');
   ctx.fillText(TEXT.chooseDifficulty, CANVAS_WIDTH / 2, 592);
 
-  drawButton(CANVAS_WIDTH / 2 - 320, 628, 300, 48, TEXT.easyMode, 'startEasy');
-  drawButton(CANVAS_WIDTH / 2 + 20, 628, 300, 48, TEXT.hardMode, 'startHard');
+  drawButton(260, 628, 240, 48, TEXT.easyMode, 'startEasy');
+  drawButton(520, 628, 240, 48, TEXT.mediumMode, 'startMedium');
+  drawButton(780, 628, 240, 48, TEXT.hardMode, 'startHard');
   drawButton(CANVAS_WIDTH - 164, 20, 140, 44, '📖 ' + TEXT.storyButton, 'openStory');
   }
 
@@ -3081,7 +3126,7 @@ function drawLeaderboardPanel(x, y, w, h) {
   const maxRows = Math.min(leaderboardCache.length, 6);
   for (let i = 0; i < maxRows; i++) {
     const row = leaderboardCache[i];
-    const mode = row.difficulty === 'hard' ? 'קשה' : 'קל';
+    const mode = getDifficultyLabel(row.difficulty);
     const done = row.completed ? ' ✨' : '';
     const line = (i + 1) + '. ' + row.player_name + ' — ' + row.score + ' (' + mode + ')' + done;
     ctx.fillText(line, x + w - 20, ly);
@@ -3465,8 +3510,8 @@ function playFinalArpeggio() {
    ========================================================================== */
 
 function applyHearts() {
-  maxHearts = MAX_HEARTS;
-  hearts = MAX_HEARTS;
+  maxHearts = getDifficulty().hearts || MAX_HEARTS;
+  hearts = maxHearts;
 }
 
 function getPlayerName() {
@@ -3647,7 +3692,7 @@ function renderLeaderboardHtml() {
 
   leaderboardCache.slice(0, 4).forEach((row, i) => {
     const li = document.createElement('li');
-    const mode = row.difficulty === 'hard' ? 'קשה' : 'קל';
+    const mode = getDifficultyLabel(row.difficulty);
     const done = row.completed ? ' ✨' : '';
     li.textContent = (i + 1) + '. ' + row.player_name + ' — ' + row.score + ' (' + mode + ')' + done;
     list.appendChild(li);
